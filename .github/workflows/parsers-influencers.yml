@@ -31,6 +31,7 @@ jobs:
           GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
           CSE_BUDGET: '20'
           YT_BUDGET: '10'
+          NOTIFY_URL: 'https://utdteam.app.n8n.cloud/webhook/utd-parser-notify'
         run: python run.py influencers
 
       - name: Commit updated dedup state
