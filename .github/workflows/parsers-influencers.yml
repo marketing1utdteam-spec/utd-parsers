@@ -29,6 +29,8 @@ jobs:
         env:
           STATE_DIR: ./data
           GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+          GOOGLE_API_KEYS: ${{ secrets.GOOGLE_API_KEYS }}
+          GOOGLE_CSE_IDS: ${{ secrets.GOOGLE_CSE_IDS }}
           CSE_BUDGET: '200'
           YT_BUDGET: '100'
           NOTIFY_URL: 'https://utdteam.app.n8n.cloud/webhook/utd-parser-notify'

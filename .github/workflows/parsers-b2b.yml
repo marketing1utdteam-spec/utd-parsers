@@ -29,6 +29,8 @@ jobs:
         env:
           STATE_DIR: ./data
           GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+          GOOGLE_API_KEYS: ${{ secrets.GOOGLE_API_KEYS }}
+          GOOGLE_CSE_IDS: ${{ secrets.GOOGLE_CSE_IDS }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           MAILBOX_PROVIDER: ''          # free gauntlet only (MX+domain+live) — no MillionVerifier cost
           MAX_GOOGLE_QUERIES: '400'     # target ~200 new contacts/day (free verification)
