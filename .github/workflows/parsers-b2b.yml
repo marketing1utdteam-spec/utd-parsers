@@ -32,6 +32,7 @@ jobs:
           MILLIONVERIFIER_KEYS: ${{ secrets.MILLIONVERIFIER_KEYS }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           MAX_GOOGLE_QUERIES: '15'
+          NOTIFY_URL: 'https://utdteam.app.n8n.cloud/webhook/utd-parser-notify'
         run: python run.py b2b
 
       - name: Commit updated dedup state

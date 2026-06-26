@@ -1,6 +1,23 @@
 #!/usr/bin/env python3
-"""Runner used by GitHub Actions. Usage: python run.py b2b|influencers"""
-import os, sys, json
+"""Runner used by GitHub Actions. Usage: python run.py b2b|influencers
+Runs one parser, then POSTs a summary to NOTIFY_URL (n8n webhook) so a
+notification email is sent — on both success and failure."""
+import os, sys, json, traceback
+
+try:
+    import requests
+except Exception:
+    requests = None
+
+
+def notify(payload):
+    url = os.environ.get("NOTIFY_URL", "").strip()
+    if url and requests:
+        try:
+            requests.post(url, json=payload, timeout=30)
+        except Exception as e:
+            print("notify failed:", e)
+
 
 # Write Google service-account creds from the GH secret into a file
 creds = os.environ.get("GOOGLE_CREDENTIALS_JSON", "").strip()
@@ -18,5 +35,12 @@ elif which in ("influencers", "influencer"):
 else:
     print("usage: python run.py b2b|influencers"); sys.exit(2)
 
-summary = m.run_once()
-print("SUMMARY:", json.dumps(summary, ensure_ascii=False))
+try:
+    summary = m.run_once()
+    summary["status"] = "ok"
+    print("SUMMARY:", json.dumps(summary, ensure_ascii=False))
+    notify(summary)
+except Exception as e:
+    traceback.print_exc()
+    notify({"parser": which, "status": "error", "added": 0, "error": str(e)[:300]})
+    sys.exit(1)
