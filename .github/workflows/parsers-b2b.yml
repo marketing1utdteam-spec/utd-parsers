@@ -1,0 +1,45 @@
+name: B2B Parser — Daily
+
+on:
+  schedule:
+    - cron: '0 6 * * *'      # 06:00 UTC every day
+  workflow_dispatch: {}        # manual "Run workflow" button
+
+permissions:
+  contents: write              # allow committing the dedup state back
+
+concurrency:
+  group: b2b-parser
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install deps
+        run: pip install -r requirements.txt
+
+      - name: Run B2B harvester
+        env:
+          STATE_DIR: ./data
+          GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+          MILLIONVERIFIER_KEYS: ${{ secrets.MILLIONVERIFIER_KEYS }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          MAX_GOOGLE_QUERIES: '15'
+        run: python run.py b2b
+
+      - name: Commit updated dedup state
+        if: always()
+        run: |
+          git config user.name  "utd-parser-bot"
+          git config user.email "utd-parser-bot@users.noreply.github.com"
+          git add data/*.json 2>/dev/null || true
+          git commit -m "b2b state: $(date -u +%F)" || echo "no state changes"
+          git pull --rebase --autostash || true
+          git push || echo "nothing to push"
