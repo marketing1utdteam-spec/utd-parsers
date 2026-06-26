@@ -88,29 +88,10 @@ PROFILE = {
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 
 # Google CSE key / id pairs — rotate on quota/block.
-API_PAIRS = [
-    {"api_key": "AIzaSyCYAZw3KclDIYqy30Xgi7TbCC15_2198vg", "cse_id": "5107e0f7b5faa4ce7"},
-    {"api_key": "AIzaSyCfAJPCyfEnMvu8uYWvISxCibWD8gppxjk", "cse_id": "91210c0ba66e94039"},
-    {"api_key": "AIzaSyAlbHFd672eLVHIz-OA8N_nlkeSEg4DL5s", "cse_id": "87b6c79caaa104a58"},
-    {"api_key": "AIzaSyBuENu_MnSCj1C0ZS6X6pKRc26lTvTRzMI", "cse_id": "d4d01af0998324e55"},
-    {"api_key": "AIzaSyDLLREzI6DaBN27HD5l2wkAGGzR5FfddKI",  "cse_id": "4391dbf022f0f46a5"},
-    {"api_key": "AIzaSyCWxw5yZBPTxeZOh9x8xfpBuK6F0vzlj88", "cse_id": "b03a9773974844789"},
-    {"api_key": "AIzaSyAhgZMM7eer0BPbkgRP9fHVNZCSKsIno88", "cse_id": "f14011ae7d0cf49fd"},
-    {"api_key": "AIzaSyA92xyqPv6gxPtQqRwPUJmLDDlUP32UBME", "cse_id": "86697299512854600"},
-    {"api_key": "AIzaSyCv6lyOi0vfxZZ7pULg_MhD98lJFMOPUQs", "cse_id": "4391dbf022f0f46a5"},
-    {"api_key": "AIzaSyCdrOK9kAGNA2hFLvHQJ5Ba2e4tQTnq88c", "cse_id": "b03a9773974844789"},
-    {"api_key": "AIzaSyCUeQsuRvqLJbDNNCvtiKESRkltWI5ZMEY", "cse_id": "5107e0f7b5faa4ce7"},
-    {"api_key": "AIzaSyCR_MIXCjtFaHX4lH1XPt5F3lLb9JHFCHw", "cse_id": "f3060050f57d34796"},
-    {"api_key": "AIzaSyAn2qpXtTwbNG8IuBhENUF7x9zRggexRpQ", "cse_id": "25af9ddbd539a481e"},
-    {"api_key": "AIzaSyAnYubVEdVERYDcu5oWJ4qoGm7jE8y95js", "cse_id": "862b71c6005f9453b"},
-    {"api_key": "AIzaSyCLmH85x4r5fAryV1JqnTjX807EW4oEO8A", "cse_id": "6295d895567b9436f"},
-    {"api_key": "AIzaSyBWA28fcLbFxH6vQFsb-sLyLjkrinIWAkw", "cse_id": "63b2d8e567ee649b0"},
-    {"api_key": "AIzaSyCTSOLaN9zMuKET7Evj7MpeswkD6MSy5Lc", "cse_id": "a0cd8afcb2a6f4f92"},
-    {"api_key": "AIzaSyD2aHffqbAEjvC65pJIjGcnAhnFPpmiq8E", "cse_id": "a79af35bb96ba48d7"},
-    {"api_key": "AIzaSyCOUproxVVU2rI_N5hSU4zZs3GdyVymSqM", "cse_id": "e75294f22b66847cc"},
-    {"api_key": "AIzaSyCUtyXT4arwW4VxYrxliTUd5tg8oPQHu6w", "cse_id": "906cdbe991ea440f6"},
-    {"api_key": "AIzaSyDLVUD1GI1GIqSV523ARMivMUEZAB3RNuc", "cse_id": "c110170106773471a"},
-]
+_API_KEYS = [k.strip() for k in os.environ.get("GOOGLE_API_KEYS", "").split(",") if k.strip()]
+_CSE_IDS  = [c.strip() for c in os.environ.get("GOOGLE_CSE_IDS", "").split(",") if c.strip()]
+API_PAIRS = [{"api_key": k, "cse_id": _CSE_IDS[i % len(_CSE_IDS)]}
+             for i, k in enumerate(_API_KEYS)]
 
 # ─── File paths (STATE_DIR keeps logs/state on the host volume) ──
 _STATE_DIR    = os.environ.get("STATE_DIR", ".")
@@ -152,13 +133,7 @@ MIN_SCORE           = 60    # keep contacts scoring >= this (0-100)
 MAILBOX_PROVIDER = os.environ.get("MAILBOX_PROVIDER", "millionverifier")  # "millionverifier" | "reoon" | "" (off)
 # Keys come from env MILLIONVERIFIER_KEYS (comma-separated); fallback to the
 # embedded list so it still works locally. Rotated round-robin.
-MAILBOX_API_KEYS = [k.strip() for k in os.environ.get("MILLIONVERIFIER_KEYS", "").split(",") if k.strip()] or [
-    "QSkMkQKoJ69q2aGvugbidECgN",        # ~500 credits
-    "WMqR3PvpNicFswSo5HeLBUweM",        # ~500 credits
-    "GkQSRUNpMnHrZjqtIXHO5rruW",        # empty (auto-dropped)
-    "ck1PDqYu5CNc9aYdIbuc9Vtsl",        # empty (auto-dropped)
-    "IRDUnDkdVXcOpD9jTuIhsh8SN",        # empty (auto-dropped)
-]
+MAILBOX_API_KEYS = [k.strip() for k in os.environ.get("MILLIONVERIFIER_KEYS", "").split(",") if k.strip()]
 MAILBOX_DROP_CATCHALL = True   # drop catch-all domains (can't confirm mailbox)
 MAILBOX_DROP_UNKNOWN  = True   # drop unverifiable results (max precision)
 

@@ -47,38 +47,9 @@ from openpyxl import Workbook, load_workbook
 # CREDENTIALS
 # =========================================================================
 
-API_KEYS = [
-    "AIzaSyCYAZw3KclDIYqy30Xgi7TbCC15_2198vg",
-    "AIzaSyCfAJPCyfEnMvu8uYWvISxCibWD8gppxjk",
-    "AIzaSyAlbHFd672eLVHIz-OA8N_nlkeSEg4DL5s",
-    "AIzaSyBuENu_MnSCj1C0ZS6X6pKRc26lTvTRzMI",
-    "AIzaSyDLLREzI6DaBN27HD5l2wkAGGzR5FfddKI",
-    "AIzaSyCWxw5yZBPTxeZOh9x8xfpBuK6F0vzlj88",
-    "AIzaSyAhgZMM7eer0BPbkgRP9fHVNZCSKsIno88",
-    "AIzaSyA92xyqPv6gxPtQqRwPUJmLDDlUP32UBME",
-    "AIzaSyCv6lyOi0vfxZZ7pULg_MhD98lJFMOPUQs",
-    "AIzaSyCdrOK9kAGNA2hFLvHQJ5Ba2e4tQTnq88c",
-    "AIzaSyCUeQsuRvqLJbDNNCvtiKESRkltWI5ZMEY",
-    "AIzaSyCR_MIXCjtFaHX4lH1XPt5F3lLb9JHFCHw",
-    "AIzaSyAn2qpXtTwbNG8IuBhENUF7x9zRggexRpQ",
-    "AIzaSyAnYubVEdVERYDcu5oWJ4qoGm7jE8y95js",
-    "AIzaSyCLmH85x4r5fAryV1JqnTjX807EW4oEO8A",
-    "AIzaSyBWA28fcLbFxH6vQFsb-sLyLjkrinIWAkw",
-    "AIzaSyCTSOLaN9zMuKET7Evj7MpeswkD6MSy5Lc",
-    "AIzaSyD2aHffqbAEjvC65pJIjGcnAhnFPpmiq8E",
-    "AIzaSyCOUproxVVU2rI_N5hSU4zZs3GdyVymSqM",
-    "AIzaSyCUtyXT4arwW4VxYrxliTUd5tg8oPQHu6w",
-    "AIzaSyDLVUD1GI1GIqSV523ARMivMUEZAB3RNuc",
-]
+API_KEYS = [k.strip() for k in os.environ.get("GOOGLE_API_KEYS", "").split(",") if k.strip()]
 
-GOOGLE_CX_IDS = list(dict.fromkeys([
-    "5107e0f7b5faa4ce7", "91210c0ba66e94039", "87b6c79caaa104a58",
-    "d4d01af0998324e55", "4391dbf022f0f46a5", "b03a9773974844789",
-    "f14011ae7d0cf49fd", "86697299512854600", "f3060050f57d34796",
-    "25af9ddbd539a481e", "862b71c6005f9453b", "6295d895567b9436f",
-    "63b2d8e567ee649b0", "a0cd8afcb2a6f4f92", "a79af35bb96ba48d7",
-    "e75294f22b66847cc", "906cdbe991ea440f6", "c110170106773471a",
-]))
+GOOGLE_CX_IDS = [c.strip() for c in os.environ.get("GOOGLE_CSE_IDS", "").split(",") if c.strip()]
 
 # =========================================================================
 # CONFIG
