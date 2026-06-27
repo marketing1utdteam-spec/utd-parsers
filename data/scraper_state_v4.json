@@ -1,10 +1,10 @@
 {
   "blog_cse_used": 100,
-  "blog_query_idx": 1,
-  "blog_start": 71,
+  "blog_query_idx": 3,
+  "blog_start": 41,
   "yt_searches_used": 100,
-  "yt_query_idx": 9,
+  "yt_query_idx": 16,
   "yt_page_token": "CJYBEAA",
-  "social_cse_used": 18,
-  "social_query_idx": 18
+  "social_cse_used": 100,
+  "social_query_idx": 118
 }
