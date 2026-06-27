@@ -617,6 +617,32 @@ BLOG_DISCOVERY_QUERIES = [
     '"shopify theme" review site:medium.com',
     '"shopify" theme review "contact us"',
     '"shopify themes" comparison "write for us"',
+    "shopify dropshipping blog review",
+    "shopify store review blog ecommerce",
+    "ecommerce blog shopify themes design",
+    "shopify apps review blog",
+    "shopify speed optimization blog",
+    "best ecommerce platform shopify blog",
+    "shopify vs woocommerce review blog",
+    "shopify case study blog",
+    "shopify conversion optimization blog",
+    "shopify expert blog write for us",
+    "shopify agency blog review",
+    "shopify development tutorial blog",
+    "shopify store examples blog",
+    "shopify design inspiration blog",
+    "shopify merchant interview blog",
+    "shopify product review ecommerce blog",
+    '"shopify" review site:wordpress.com',
+    '"shopify theme" review site:blogspot.com',
+    "shopify newsletter ecommerce creator",
+    "shopify tips blog 2026",
+    "shopify theme roundup best contact",
+    "shopify ecommerce reviewer contact email",
+    "shopify store builder review blog",
+    "shopify theme blog reseller partner",
+    "shopify how to guide blog ecommerce",
+    "shopify marketing blog store owner",
 ]
 
 
@@ -629,11 +655,8 @@ def run_blog_module(state, seen_creators, seen_emails, max_requests, stop):
     logging.info(f"=== MODULE A: BLOGS === budget={max_requests}")
 
     while req_used < max_requests and not stop["flag"]:
-        if q_idx >= len(BLOG_DISCOVERY_QUERIES):
-            logging.info("Blog queries exhausted.")
-            break
-
-        query = BLOG_DISCOVERY_QUERIES[q_idx]
+        # cycle through the query list forever (no exhaustion)
+        query = BLOG_DISCOVERY_QUERIES[q_idx % len(BLOG_DISCOVERY_QUERIES)]
         items, err, _ = cse_search(query, start)
         req_used += 1
         time.sleep(random.uniform(*SEARCH_DELAY))
@@ -745,6 +768,26 @@ YT_SEARCH_QUERIES = [
     "shopify theme 2025 2026 review",
     "top shopify themes explained",
     "shopify theme setup guide",
+    "shopify dropshipping tutorial",
+    "shopify store review",
+    "shopify for beginners",
+    "how to build a shopify store",
+    "shopify apps review",
+    "best shopify apps",
+    "shopify vs woocommerce",
+    "shopify success story ecommerce",
+    "shopify ecommerce tips",
+    "shopify store makeover",
+    "shopify theme customization tutorial",
+    "shopify speed optimization",
+    "shopify conversion rate tips",
+    "shopify product page design",
+    "ecommerce youtuber shopify",
+    "shopify expert tips",
+    "shopify 2026 review",
+    "shopify theme recommendations",
+    "shopify store critique review",
+    "shopify business tutorial",
 ]
 
 
@@ -765,11 +808,8 @@ def run_youtube_module(state, seen_creators, seen_emails, max_searches, stop):
     logging.info(f"=== MODULE B: YOUTUBE === budget={max_searches}")
 
     while srch_used < max_searches and not stop["flag"]:
-        if q_idx >= len(YT_SEARCH_QUERIES):
-            logging.info("YT queries exhausted.")
-            break
-
-        query  = YT_SEARCH_QUERIES[q_idx]
+        # cycle through the query list forever (no exhaustion)
+        query  = YT_SEARCH_QUERIES[q_idx % len(YT_SEARCH_QUERIES)]
         params = {"part": "snippet", "q": query, "type": "channel",
                   "maxResults": 25, "relevanceLanguage": "en"}
         if page_token:
@@ -920,6 +960,22 @@ SOCIAL_QUERIES = [
     ('site:threads.net shopify theme ecommerce creator', "Threads"),
     ('site:t.me shopify theme review channel', "Telegram"),
     ('site:t.me shopify ecommerce news', "Telegram"),
+    ('site:instagram.com shopify dropshipping creator', "Instagram"),
+    ('site:instagram.com shopify expert ecommerce coach', "Instagram"),
+    ('site:tiktok.com shopify dropshipping tips', "TikTok"),
+    ('site:tiktok.com shopify store review creator', "TikTok"),
+    ('site:tiktok.com ecommerce shopify coach', "TikTok"),
+    ('site:linkedin.com/in/ shopify expert ecommerce consultant', "LinkedIn"),
+    ('site:linkedin.com/in/ shopify developer freelancer', "LinkedIn"),
+    ('site:twitter.com shopify dropshipping creator', "Twitter/X"),
+    ('site:x.com shopify expert ecommerce', "Twitter/X"),
+    ('site:substack.com shopify ecommerce newsletter creator', "Substack"),
+    ('site:substack.com dropshipping shopify newsletter', "Substack"),
+    ('site:pinterest.com shopify store design ideas creator', "Pinterest"),
+    ('site:threads.net shopify ecommerce tips creator', "Threads"),
+    ('site:youtube.com shopify theme review channel', "YouTube"),
+    ('site:medium.com shopify ecommerce creator profile', "Medium"),
+    ('site:t.me shopify dropshipping channel', "Telegram"),
 ]
 
 EXT_LINK_RE = re.compile(
@@ -945,11 +1001,8 @@ def run_social_module(state, seen_creators, seen_emails, max_requests, stop):
     logging.info(f"=== MODULE C: SOCIAL === budget={max_requests}")
 
     while req_used < max_requests and not stop["flag"]:
-        if q_idx >= len(SOCIAL_QUERIES):
-            logging.info("Social queries exhausted.")
-            break
-
-        query, platform = SOCIAL_QUERIES[q_idx]
+        # cycle through the query list forever (no exhaustion)
+        query, platform = SOCIAL_QUERIES[q_idx % len(SOCIAL_QUERIES)]
         items, err, _   = cse_search(query)
         req_used += 1
         time.sleep(random.uniform(*SEARCH_DELAY))
@@ -1191,6 +1244,11 @@ def main(cse_budget, yt_budget, output_path):
     setup_logging()
 
     state        = load_json(STATE_FILE, {})
+    # Per-run budget counters MUST reset each run (they are cumulative in state
+    # otherwise → once total usage >= budget the modules never run again).
+    state["blog_cse_used"]    = 0
+    state["yt_searches_used"] = 0
+    state["social_cse_used"]  = 0
     seen_creators = load_json(PROCESSED_CREATORS, {})   # {creator_key: email_or_status}
     seen_emails  = load_existing_emails(output_path)
 
