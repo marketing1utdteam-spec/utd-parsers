@@ -1,11 +1,11 @@
-name: Ecom Parser — Shopify Stores (paused)
+name: Ecom Parser — Shopify Stores
 
 on:
-  # ⏸️ ПАРСЕР НА ПАУЗЕ — расписание раскомментировать по команде владельца.
+  # Запущен 2026-07-06 по команде владельца.
   #    Предлагаемые слоты (UTC, «кривые» минуты, чтобы не толкаться с b2b/influencers):
-  # schedule:
-  #   - cron: '33 4 * * *'      # ~утренний прогон
-  #   - cron: '9 15 * * *'      # ~дневной прогон (2 раза в день)
+  schedule:
+    - cron: '33 4 * * *'      # ~утренний прогон
+    - cron: '9 15 * * *'      # ~дневной прогон (2 раза в день)
   workflow_dispatch: {}          # manual "Run workflow" button only
 
 permissions:
@@ -37,7 +37,8 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           # ⚠️ создать таблицу (лист "Contacts", колонки A–O), расшарить на
           #    сервис-аккаунт и вписать её id сюда:
-          ECOM_SHEET_ID: '1K6YiWmZVamyL2B9ZKk1pYHcnXRAEK2mTdFXfVVYJG64'
+          ECOM_SHEET_ID: '1ggMS5Hko2jCY5eqcPvasBy3P6hAwbw8rldr4cS3Zeo4'
+          ECOM_SHEET_TAB: 'Ecom Contacts'
           MAILBOX_PROVIDER: ''          # free gauntlet only (MX+domain+live)
           MAX_GOOGLE_QUERIES: '300'     # 300 запросов × 2 страницы = ~600 CSE-вызовов/прогон
           SEARCH_PAGES: '2'             # брать 2 страницы выдачи на запрос (как в b2b)
