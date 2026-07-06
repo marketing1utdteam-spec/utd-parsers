@@ -51,6 +51,15 @@ PROFILE = {
         "wordpress development", "woocommerce development",
         "ui ux design", "landing page design", "conversion rate optimization",
         "headless commerce", "custom website", "digital agency",
+        "shopify migration", "magento to shopify migration",
+        "woocommerce to shopify", "shopify redesign",
+        "shopify speed optimization", "shopify seo",
+        "ecommerce web design", "dtc ecommerce agency",
+        "b2b ecommerce development", "shopify app development",
+        "email marketing for ecommerce", "klaviyo agency",
+        "ecommerce cro", "online shop design",
+        "ecommerce website redesign", "shopify maintenance",
+        "shopify support agency", "subscription ecommerce development",
     ],
 
     # Words that, on the page, CONFIRM it is the right kind of company.
@@ -109,6 +118,7 @@ SHEETS_CREDS_FILE     = os.environ.get("GOOGLE_CREDS_FILE", os.path.join(_STATE_
 # ─── Session limits ─────────────────────────────────────────────
 MAX_GOOGLE_QUERIES  = int(os.environ.get("MAX_GOOGLE_QUERIES", "50"))  # new unique Google searches per session
 RESULTS_PER_QUERY   = 10    # Google results per query (max 10)
+SEARCH_PAGES        = int(os.environ.get("SEARCH_PAGES", "2"))  # result pages per query (each page = 1 API call)
 MAX_SUBPAGES        = 3     # extra subpages checked per domain
 MIN_SCORE           = 60    # keep contacts scoring >= this (0-100)
 
@@ -723,16 +733,40 @@ class QueryGenerator:
 
     _TYPE = ["agency", "studio", "company", "team", "design studio",
              "development studio", "digital agency", "web studio",
-             "creative agency", "web agency"]
+             "creative agency", "web agency", "consultancy", "experts",
+             "developers", "partners"]
 
     _LOC = [
         "", "", "", "", "", "",
+        # North America
         "USA", "New York", "Los Angeles", "Chicago", "San Francisco",
         "Austin", "Seattle", "Boston", "Miami", "Denver", "Dallas",
+        "Atlanta", "Portland", "San Diego", "Phoenix", "Houston",
+        "Philadelphia", "Minneapolis", "Nashville", "Charlotte",
+        "Orlando", "Tampa", "Las Vegas", "Columbus", "Kansas City",
+        "Indianapolis", "Detroit", "Pittsburgh", "Salt Lake City",
+        "Canada", "Toronto", "Vancouver", "Montreal", "Calgary", "Ottawa",
+        # UK & Ireland
         "UK", "London", "Manchester", "Birmingham", "Bristol",
-        "Australia", "Sydney", "Melbourne", "Brisbane",
-        "Canada", "Toronto", "Vancouver", "Ireland", "Dublin",
-        "Singapore", "New Zealand", "Auckland",
+        "Leeds", "Glasgow", "Edinburgh", "Liverpool", "Nottingham",
+        "Ireland", "Dublin",
+        # Europe
+        "Germany", "Berlin", "Munich", "Hamburg", "Cologne",
+        "Netherlands", "Amsterdam", "Rotterdam", "Utrecht",
+        "France", "Paris", "Lyon", "Spain", "Madrid", "Barcelona",
+        "Valencia", "Italy", "Milan", "Rome", "Portugal", "Lisbon",
+        "Porto", "Poland", "Warsaw", "Krakow", "Wroclaw",
+        "Czech Republic", "Prague", "Austria", "Vienna",
+        "Switzerland", "Zurich", "Geneva", "Sweden", "Stockholm",
+        "Denmark", "Copenhagen", "Norway", "Oslo", "Finland", "Helsinki",
+        "Belgium", "Brussels", "Antwerp", "Romania", "Bucharest",
+        "Bulgaria", "Sofia", "Croatia", "Zagreb", "Greece", "Athens",
+        "Estonia", "Tallinn", "Latvia", "Riga", "Lithuania", "Vilnius",
+        "Ukraine", "Kyiv", "Lviv", "Hungary", "Budapest", "Serbia", "Belgrade",
+        # APAC & other
+        "Australia", "Sydney", "Melbourne", "Brisbane", "Perth", "Adelaide",
+        "Singapore", "New Zealand", "Auckland", "Dubai", "UAE",
+        "South Africa", "Cape Town", "Johannesburg",
     ]
 
     # contact-intent suffix + EXCLUDE article/marketplace noise.
@@ -743,6 +777,11 @@ class QueryGenerator:
         f'"get in touch" email {_EXCLUDE}',
         f'"work with us" email {_EXCLUDE}',
         f'("hello@" OR "contact@") {_EXCLUDE}',
+        f'"request a quote" ("info@" OR "hello@") {_EXCLUDE}',
+        f'"start a project" email {_EXCLUDE}',
+        f'"free consultation" ("hello@" OR "contact@") {_EXCLUDE}',
+        f'"book a call" ("hello@" OR "info@") {_EXCLUDE}',
+        f'"shopify partner" contact {_EXCLUDE}',
     ]
 
     def __init__(self, counter: int, used_hashes: set):
@@ -797,7 +836,7 @@ class GoogleClient:
         log.warning(f"  🔄 API key rotated ({reason}) → pair #{self.idx}")
         time.sleep(API_ROT_WAIT)
 
-    def search(self, query: str) -> list:
+    def search(self, query: str, start: int = 1) -> list:
         for _ in range(len(self.pairs)):
             pair = self.pairs[self.idx]
             try:
@@ -805,6 +844,7 @@ class GoogleClient:
                     self._BASE,
                     params={"key": pair["api_key"], "cx": pair["cse_id"],
                             "q": query, "num": RESULTS_PER_QUERY,
+                            "start": start,
                             "hl": "en", "lr": "lang_en"},
                     timeout=15,
                 )
@@ -1249,8 +1289,13 @@ class EmailHarvester:
             if not self.running:
                 break
             log.info(f"\n  [G {i}/{len(queries)}] {q}")
-            urls = self.google.search(q)
-            log.info(f"    → {len(urls)} URLs")
+            urls = []
+            for page in range(SEARCH_PAGES):
+                batch = self.google.search(q, start=1 + page * RESULTS_PER_QUERY)
+                urls += batch
+                if len(batch) < RESULTS_PER_QUERY:
+                    break  # выдача кончилась, вторую страницу не тратим
+            log.info(f"    → {len(urls)} URLs ({SEARCH_PAGES} pages max)")
             for url in urls:
                 if not self.running:
                     break

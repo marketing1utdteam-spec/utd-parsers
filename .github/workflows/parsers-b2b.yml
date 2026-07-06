@@ -2,7 +2,8 @@ name: B2B Parser — Daily
 
 on:
   schedule:
-    - cron: '0 6 * * *'      # 06:00 UTC every day
+    - cron: '0 6 * * *'      # 06:00 UTC — утренний прогон
+    - cron: '0 14 * * *'     # 14:00 UTC — дневной прогон (2 раза в день)
   workflow_dispatch: {}        # manual "Run workflow" button
 
 permissions:
@@ -33,7 +34,8 @@ jobs:
           GOOGLE_CSE_IDS: ${{ secrets.GOOGLE_CSE_IDS }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           MAILBOX_PROVIDER: ''          # free gauntlet only (MX+domain+live) — no MillionVerifier cost
-          MAX_GOOGLE_QUERIES: '400'     # target ~200 new contacts/day (free verification)
+          MAX_GOOGLE_QUERIES: '350'     # 350 запросов × 2 страницы × 2 прогона = ~1400 CSE-вызовов/день (квота 2100)
+          SEARCH_PAGES: '2'             # брать 2 страницы выдачи на запрос (глубже, меньше повторов доменов)
           NOTIFY_URL: 'https://utdteam.app.n8n.cloud/webhook/utd-parser-notify'
         run: python run.py b2b
 
