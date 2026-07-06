@@ -76,9 +76,10 @@ SHEETS_COLUMNS        = 4   # values appended per row (A–D); MUST stay constan
 
 MAX_CSE_REQUESTS_PER_RUN = 80
 MAX_YT_SEARCHES_PER_RUN  = 40
-MIN_SHOPIFY_ARTICLES      = 3   # raised from 2 → 3 for higher quality bar
-MIN_ACTIVITY_SCORE        = 4   # out of 8, see score_site_activity()
-MIN_YT_SUBSCRIBERS        = 500
+SEARCH_PAGES              = int(os.environ.get("SEARCH_PAGES", "2"))  # CSE result pages per query (как в b2b_harvester)
+MIN_SHOPIFY_ARTICLES      = int(os.environ.get("MIN_SHOPIFY_ARTICLES", "3"))
+MIN_ACTIVITY_SCORE        = int(os.environ.get("MIN_ACTIVITY_SCORE", "4"))   # out of 8, see score_site_activity()
+MIN_YT_SUBSCRIBERS        = int(os.environ.get("MIN_YT_SUBSCRIBERS", "500"))
 MAX_EMAILS_PER_CONTACT    = 3   # >3 on a contact page = team directory, skip
 PAGE_TIMEOUT              = 12
 SEARCH_DELAY              = (1.2, 2.5)
@@ -203,7 +204,7 @@ def is_theme_creator(domain, html=""):
     Returns True if this domain BUILDS or SELLS Shopify themes.
     First checks static blacklist, then scans homepage HTML for creator signals.
     """
-    d = domain.lower().lstrip("www.")
+    d = domain.lower().removeprefix("www.")
     if any(d == bl or d.endswith("." + bl) for bl in THEME_CREATOR_DOMAINS):
         return True
     if html:
@@ -371,15 +372,40 @@ BLOCKED_LOCALS = {
     "postmaster", "abuse", "unsubscribe", "mailer-daemon", "bounce",
     "bounces", "billing", "legal", "privacy", "security", "admin",
     "administrator", "test", "testing",
+    # service inboxes — useless for creator outreach
+    "support", "help", "helpdesk", "service", "services",
+    "customerservice", "customercare", "careers", "jobs", "hr",
+    "recruiting", "recruitment", "news", "newsletter",
+    # placeholder locals seen in article bodies
+    "your", "you", "yourname", "youremail", "your.email", "name",
+    "firstname", "lastname", "first.last", "john.doe", "jane.doe",
+    "user", "username", "someone", "email", "mail", "example", "sample",
+    "blog",   # "blog@gmail.com" — плейсхолдер из статей
 }
 
 BLOCKED_DOMAINS = {
-    "example.com", "yourdomain.com", "domain.com", "email.com", "schema.org",
+    "example.com", "example.org", "example.net", "yourdomain.com",
+    "domain.com", "email.com", "schema.org",
     "sentry.io", "wixpress.com", "godaddy.com", "partnerstack.com",
     "stamped.io", "gempages.net", "globo.io", "channels.app",
     "shopify.com", "myshopify.com", "youtube.com", "instagram.com",
     "tiktok.com", "facebook.com", "twitter.com", "linkedin.com",
     "apple.com", "google.com",
+    # placeholder domains from article/code examples
+    "company.com", "yourcompany.com", "yoursite.com", "mysite.com",
+    "mystore.com", "yourstore.com", "acme.com", "test.com", "sample.com",
+    "site.com", "website.com", "mywebsite.com", "mail.com", "address.com",
+    # platform/service inboxes that are never a creator
+    "archive.org", "ghost.org", "twilio.com", "wordpress.org",
+}
+
+# domain "TLD" that is actually a file extension → asset filename, not email
+# (e.g. "logo-27px@2x.png" matches the email regex)
+FILE_EXT_TLDS = {
+    "png", "jpg", "jpeg", "gif", "webp", "svg", "ico", "avif", "heic",
+    "css", "js", "json", "map", "html", "htm", "php", "asp", "aspx",
+    "mp4", "mov", "webm", "mp3", "wav", "pdf", "zip", "gz",
+    "woff", "woff2", "ttf", "eot", "otf", "tld",
 }
 
 PERSONAL_DOMAINS = {
@@ -403,6 +429,18 @@ def validate_email(raw):
     if not EMAIL_RE.fullmatch(e):
         return None
     local, domain = e.split("@", 1)
+    # malformed edges the broad regex lets through (CSS/JS artifacts like ".anim@ed-.div")
+    if local[0] in ".-_" or local[-1] in ".-_":
+        return None
+    if any(lbl.startswith("-") or lbl.endswith("-") or not lbl
+           for lbl in domain.split(".")):
+        return None
+    # asset filenames: TLD is a file extension ("...logo-27px@2x.png")
+    if domain.rsplit(".", 1)[-1] in FILE_EXT_TLDS:
+        return None
+    # retina/asset local parts: "...-27px", "300x250", pure hex hashes
+    if re.search(r'\d+px$|\d+x\d+$', local) or re.fullmatch(r'[0-9a-f]{8,}', local):
+        return None
     if local in BLOCKED_LOCALS:
         return None
     if re.match(r'^u[0-9a-f]{3,5}$', local):  # JS escape artifact
@@ -561,6 +599,27 @@ EXCLUDED_DOMAIN_TOKENS = (
     "quora.com", "wikipedia.org", "github.com",
 )
 
+# Big corporate media / SaaS blogs: they pass the activity gate easily but are
+# NOT creators/influencers — their press@/news@ inboxes polluted the sheet.
+BIG_PUBLISHER_DOMAINS = frozenset({
+    "techradar.com", "itpro.com", "tomsguide.com", "pcmag.com", "cnet.com",
+    "zdnet.com", "theverge.com", "wired.com", "engadget.com", "mashable.com",
+    "digitaltrends.com", "lifehacker.com", "forbes.com", "businessinsider.com",
+    "techcrunch.com", "entrepreneur.com", "inc.com", "fastcompany.com",
+    "ycombinator.com", "industrydive.com", "marketingdive.com", "retaildive.com",
+    "hubspot.com", "salesforce.com", "semrush.com", "ahrefs.com", "moz.com",
+    "bigcommerce.com", "wix.com", "squarespace.com", "hostinger.com",
+    "bluehost.com", "kinsta.com", "cloudways.com", "shopify.dev",
+    "teamblind.com", "hackerone.com", "capterra.com", "g2.com",
+    "trustpilot.com", "statista.com", "investopedia.com", "nerdwallet.com",
+})
+
+
+def is_big_publisher(domain):
+    d = (domain or "").lower().removeprefix("www.")
+    return any(d == b or d.endswith("." + b) for b in BIG_PUBLISHER_DOMAINS)
+
+
 EXCLUDED_PATH_TOKENS = (
     "/hc/", "/help-center/", "/support/", "/legal/", "/terms",
     "/privacy", "/sitemap", "/tag/", "/wp-admin", "/wp-login",
@@ -570,7 +629,9 @@ EXCLUDED_PATH_TOKENS = (
 
 
 def domain_of(url):
-    return urlparse(url).netloc.lower().lstrip("www.")
+    # NB: .removeprefix, NOT .lstrip("www.") — lstrip strips *characters* {w,.}
+    # and mangled domains like "weareunderground.com" → "eareunderground.com"
+    return urlparse(url).netloc.lower().removeprefix("www.")
 
 
 def is_excluded_domain(url):
@@ -589,7 +650,7 @@ def is_excluded_path(url):
 
 def creator_key(platform, identifier):
     """Stable key for a unique creator entity."""
-    return f"{platform.lower()}:{identifier.lower().lstrip('www.')}"
+    return f"{platform.lower()}:{identifier.lower().removeprefix('www.')}"
 
 
 # =========================================================================
@@ -643,6 +704,30 @@ BLOG_DISCOVERY_QUERIES = [
     "shopify theme blog reseller partner",
     "shopify how to guide blog ecommerce",
     "shopify marketing blog store owner",
+    # --- niches (2026-07 expansion: реально новые сегменты криейторов) ---
+    "dropshipping blog shopify review 2026",
+    "print on demand shopify blog review",
+    "shopify tiktok shop blog tutorial",
+    "ecommerce case study blog shopify store",
+    "shopify email marketing blog creator",
+    "shopify seo blog personal",
+    "shopify cro blog conversion review",
+    "ecommerce side hustle blog shopify",
+    "shopify one product store blog",
+    "shopify branding blog small business",
+    "ecom blogger shopify themes",
+    "shopify freelancer blog tutorial",
+    # --- intent tails: криейторы, открытые к коллабам/спонсорству ---
+    'shopify blogger "media kit"',
+    'ecommerce blog "work with brands" shopify',
+    'shopify blog "sponsored post" review',
+    'ecommerce blogger "collab" shopify themes',
+    'shopify content creator "business email"',
+    'shopify blog "advertise with us" ecommerce',
+    'ecommerce newsletter "sponsorship" shopify',
+    'shopify review blog "partner with us"',
+    'ecommerce creator blog "brand partnerships"',
+    'shopify blog "write for us" themes',
 ]
 
 
@@ -673,6 +758,9 @@ def run_blog_module(state, seen_creators, seen_emails, max_requests, stop):
             if not link or is_excluded_domain(link) or is_excluded_path(link):
                 continue
             d = domain_of(link)
+            if d and is_big_publisher(d):
+                seen_creators.setdefault(creator_key("blog", d), "skipped:big_publisher")
+                continue
             if d and d not in domains_this_batch:
                 domains_this_batch[d] = (link, item.get("title", ""))
 
@@ -743,8 +831,12 @@ def run_blog_module(state, seen_creators, seen_emails, max_requests, stop):
             })
             logging.info(f"  ✉ {email} | {domain} | score={score} | {signals_str}")
 
-        start += 10
-        if start > 91:
+        # paginate deeper (до SEARCH_PAGES страниц) ONLY while the query
+        # returns full pages; short/empty page → next query, не жжём бюджет
+        max_start = 1 + (SEARCH_PAGES - 1) * 10
+        if len(items) >= 10 and start < max_start:
+            start += 10
+        else:
             start = 1
             q_idx += 1
 
@@ -788,6 +880,27 @@ YT_SEARCH_QUERIES = [
     "shopify theme recommendations",
     "shopify store critique review",
     "shopify business tutorial",
+    # --- niches (2026-07 expansion) ---
+    "shopify dropshipping 2026",
+    "print on demand shopify tutorial",
+    "tiktok shop shopify tutorial",
+    "how to start dropshipping shopify",
+    "shopify one product store",
+    "ecommerce case study shopify",
+    "shopify store setup 2026",
+    "aliexpress dropshipping shopify",
+    "ecom side hustle shopify",
+    "shopify tutorial for beginners 2026",
+    "shopify pod store review",
+    "ecommerce business tips shopify",
+    "online store design shopify",
+    "shopify app tutorial review",
+    "shopify email marketing tutorial",
+    "shopify seo tutorial",
+    "branding ecommerce store shopify",
+    "shopify vs wix vs squarespace",
+    "shopify analytics tutorial",
+    "shopify checkout customization",
 ]
 
 
@@ -809,9 +922,18 @@ def run_youtube_module(state, seen_creators, seen_emails, max_searches, stop):
 
     while srch_used < max_searches and not stop["flag"]:
         # cycle through the query list forever (no exhaustion)
-        query  = YT_SEARCH_QUERIES[q_idx % len(YT_SEARCH_QUERIES)]
-        params = {"part": "snippet", "q": query, "type": "channel",
-                  "maxResults": 25, "relevanceLanguage": "en"}
+        query = YT_SEARCH_QUERIES[q_idx % len(YT_SEARCH_QUERIES)]
+
+        # Search space rotation: channel-search выдаёт одну и ту же верхушку
+        # навсегда → чередуем type (video даёт СВЕЖИЕ каналы через их ролики)
+        # и order по номеру цикла, чтобы каждый проход списка был другим.
+        cycle       = q_idx // len(YT_SEARCH_QUERIES)
+        search_type = "channel" if cycle % 2 == 0 else "video"
+        order       = ("relevance", "date", "viewCount")[cycle % 3]
+
+        params = {"part": "snippet", "q": query, "type": search_type,
+                  "maxResults": 50 if search_type == "video" else 25,
+                  "relevanceLanguage": "en", "order": order}
         if page_token:
             params["pageToken"] = page_token
 
@@ -829,13 +951,23 @@ def run_youtube_module(state, seen_creators, seen_emails, max_searches, stop):
 
         items      = data.get("items", [])
         next_token = data.get("nextPageToken", "")
-        logging.info(f"YT [{srch_used}/{max_searches}] '{query}' → {len(items)} channels")
+        logging.info(f"YT [{srch_used}/{max_searches}] '{query}' "
+                     f"type={search_type} order={order} → {len(items)} items")
 
-        new_ch_ids = [
-            i["id"]["channelId"] for i in items
-            if i.get("id", {}).get("kind") == "youtube#channel"
-            and creator_key("yt", i["id"]["channelId"]) not in seen_creators
-        ]
+        # collect channel ids from BOTH channel results and video results
+        new_ch_ids = []
+        for i in items:
+            kind = i.get("id", {}).get("kind", "")
+            if kind == "youtube#channel":
+                cid = i["id"].get("channelId")
+            elif kind == "youtube#video":
+                cid = i.get("snippet", {}).get("channelId")
+            else:
+                cid = None
+            if cid and cid not in new_ch_ids \
+                    and creator_key("yt", cid) not in seen_creators:
+                new_ch_ids.append(cid)
+        new_ch_ids = new_ch_ids[:50]   # channels API limit per call
 
         if new_ch_ids:
             ch_data, _ = yt_api("channels", {
@@ -882,7 +1014,10 @@ def run_youtube_module(state, seen_creators, seen_emails, max_searches, stop):
                     if is_excluded_domain(link):
                         continue
                     ext_domain = domain_of(link)
-                    if ext_domain in seen_creators.values():
+                    # BUG FIX: раньше сравнивали домен с values() реестра
+                    # (там лежат email/статусы, не домены) — проверка не работала
+                    if creator_key("blog", ext_domain) in seen_creators \
+                            or is_big_publisher(ext_domain):
                         continue
                     e, src = find_best_contact_email(link)
                     if e:
@@ -976,6 +1111,32 @@ SOCIAL_QUERIES = [
     ('site:youtube.com shopify theme review channel', "YouTube"),
     ('site:medium.com shopify ecommerce creator profile', "Medium"),
     ('site:t.me shopify dropshipping channel', "Telegram"),
+    # --- niches + intent tails (2026-07 expansion) ---
+    ('site:youtube.com shopify review channel about', "YouTube"),
+    ('site:youtube.com ecommerce tutorial creator shopify', "YouTube"),
+    ('site:youtube.com dropshipping channel shopify', "YouTube"),
+    ('site:tiktok.com shopify creator "business email"', "TikTok"),
+    ('site:tiktok.com ecommerce creator collab', "TikTok"),
+    ('site:tiktok.com print on demand shopify creator', "TikTok"),
+    ('site:instagram.com ecom blogger shopify', "Instagram"),
+    ('site:instagram.com shopify creator "collab"', "Instagram"),
+    ('site:instagram.com ecommerce coach "business inquiries"', "Instagram"),
+    ('site:instagram.com shopify tips creator "email"', "Instagram"),
+    ('site:twitter.com ecommerce blogger shopify "sponsorship"', "Twitter/X"),
+    ('site:x.com shopify creator "media kit"', "Twitter/X"),
+    ('site:x.com ecommerce newsletter shopify sponsor', "Twitter/X"),
+    ('site:linkedin.com/in/ ecommerce content creator youtube shopify', "LinkedIn"),
+    ('site:linkedin.com/in/ shopify educator course creator', "LinkedIn"),
+    ('site:substack.com ecommerce operator newsletter shopify', "Substack"),
+    ('site:substack.com dtc brand newsletter shopify', "Substack"),
+    ('site:medium.com shopify theme review writer', "Medium"),
+    ('site:medium.com dropshipping shopify writer', "Medium"),
+    ('site:threads.net shopify store owner creator', "Threads"),
+    ('site:pinterest.com ecommerce shopify creator ideas', "Pinterest"),
+    ('site:t.me ecommerce shopify chat', "Telegram"),
+    ('shopify influencer "media kit" contact', "Blog/Website"),
+    ('ecommerce youtuber "business email" shopify', "Blog/Website"),
+    ('shopify tiktok creator "sponsorship" contact', "Blog/Website"),
 ]
 
 EXT_LINK_RE = re.compile(
@@ -1003,9 +1164,19 @@ def run_social_module(state, seen_creators, seen_emails, max_requests, stop):
     while req_used < max_requests and not stop["flag"]:
         # cycle through the query list forever (no exhaustion)
         query, platform = SOCIAL_QUERIES[q_idx % len(SOCIAL_QUERIES)]
-        items, err, _   = cse_search(query)
-        req_used += 1
-        time.sleep(random.uniform(*SEARCH_DELAY))
+
+        # SEARCH_PAGES страниц выдачи на запрос (как в b2b_harvester) —
+        # раньше модуль вечно крутил ТОЛЬКО первую десятку каждого запроса.
+        items = []
+        for page in range(SEARCH_PAGES):
+            if req_used >= max_requests or cse_rotator.all_exhausted():
+                break
+            batch, err, _ = cse_search(query, start=1 + page * 10)
+            req_used += 1
+            time.sleep(random.uniform(*SEARCH_DELAY))
+            items += batch
+            if len(batch) < 10:
+                break  # выдача кончилась — вторую страницу не тратим
 
         if cse_rotator.all_exhausted():
             break
@@ -1038,7 +1209,8 @@ def run_social_module(state, seen_creators, seen_emails, max_requests, stop):
             if external_site:
                 ext_d = domain_of(external_site)
                 ext_ck = creator_key("blog", ext_d)
-                if ext_ck not in seen_creators and not is_theme_creator(ext_d):
+                if ext_ck not in seen_creators and not is_theme_creator(ext_d) \
+                        and not is_big_publisher(ext_d):
                     ext_email, contact_src = find_best_contact_email(external_site)
                     time.sleep(random.uniform(*PAGE_DELAY))
                     if ext_email:
@@ -1251,6 +1423,11 @@ def main(cse_budget, yt_budget, output_path):
     state["social_cse_used"]  = 0
     seen_creators = load_json(PROCESSED_CREATORS, {})   # {creator_key: email_or_status}
     seen_emails  = load_existing_emails(output_path)
+    # Fold emails already recorded in the creator registry into the dedup set —
+    # otherwise the same email can be re-appended when the Sheet read fails
+    # (runner's xlsx is ephemeral in GitHub Actions).
+    seen_emails |= {v for v in seen_creators.values()
+                    if isinstance(v, str) and "@" in v and not v.startswith("skipped")}
 
     # Google Sheets — connect and fold its existing emails into the dedup set
     # so we never append a contact that is already in the live n8n sheet.
