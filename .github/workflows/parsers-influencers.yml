@@ -2,8 +2,8 @@ name: Influencer Parser — Daily
 
 on:
   schedule:
-    - cron: '0 6 * * *'       # ~morning run  (UTC; GitHub may delay a few hours)
-    - cron: '0 18 * * *'      # ~evening run  → twice a day
+    - cron: '29 5 * * *'       # ~morning run  (UTC; GitHub may delay a few hours)
+    - cron: '51 17 * * *'      # ~evening run  → twice a day
   workflow_dispatch: {}        # manual "Run workflow" button
 
 permissions:

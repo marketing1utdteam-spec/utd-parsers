@@ -2,8 +2,8 @@ name: B2B Parser — Daily
 
 on:
   schedule:
-    - cron: '0 6 * * *'      # 06:00 UTC — утренний прогон
-    - cron: '0 14 * * *'     # 14:00 UTC — дневной прогон (2 раза в день)
+    - cron: '17 5 * * *'      # 06:00 UTC — утренний прогон
+    - cron: '43 13 * * *'     # 14:00 UTC — дневной прогон (2 раза в день)
   workflow_dispatch: {}        # manual "Run workflow" button
 
 permissions:
