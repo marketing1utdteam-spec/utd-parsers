@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Runner used by GitHub Actions. Usage: python run.py b2b|influencers
+"""Runner used by GitHub Actions. Usage: python run.py b2b|influencers|ecom
 Runs one parser, then POSTs a summary to NOTIFY_URL (n8n webhook) so a
 notification email is sent — on both success and failure."""
 import os, sys, json, traceback
@@ -32,8 +32,10 @@ if which == "b2b":
     import b2b_harvester as m
 elif which in ("influencers", "influencer"):
     import influencer_scraper as m
+elif which == "ecom":
+    import ecom_harvester as m
 else:
-    print("usage: python run.py b2b|influencers"); sys.exit(2)
+    print("usage: python run.py b2b|influencers|ecom"); sys.exit(2)
 
 try:
     summary = m.run_once()

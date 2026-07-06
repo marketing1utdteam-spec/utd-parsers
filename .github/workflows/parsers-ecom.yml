@@ -1,0 +1,55 @@
+name: Ecom Parser — Shopify Stores (paused)
+
+on:
+  # ⏸️ ПАРСЕР НА ПАУЗЕ — расписание раскомментировать по команде владельца.
+  #    Предлагаемые слоты (UTC, «кривые» минуты, чтобы не толкаться с b2b/influencers):
+  # schedule:
+  #   - cron: '33 4 * * *'      # ~утренний прогон
+  #   - cron: '9 15 * * *'      # ~дневной прогон (2 раза в день)
+  workflow_dispatch: {}          # manual "Run workflow" button only
+
+permissions:
+  contents: write                # allow committing the dedup state back
+
+concurrency:
+  group: ecom-parser
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install deps
+        run: pip install -r requirements.txt
+
+      - name: Run ecom harvester
+        env:
+          STATE_DIR: ./data
+          GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+          GOOGLE_API_KEYS: ${{ secrets.GOOGLE_API_KEYS }}
+          GOOGLE_CSE_IDS: ${{ secrets.GOOGLE_CSE_IDS }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # ⚠️ создать таблицу (лист "Contacts", колонки A–O), расшарить на
+          #    сервис-аккаунт и вписать её id сюда:
+          ECOM_SHEET_ID: '1K6YiWmZVamyL2B9ZKk1pYHcnXRAEK2mTdFXfVVYJG64'
+          MAILBOX_PROVIDER: ''          # free gauntlet only (MX+domain+live)
+          MAX_GOOGLE_QUERIES: '300'     # 300 запросов × 2 страницы = ~600 CSE-вызовов/прогон
+          SEARCH_PAGES: '2'             # брать 2 страницы выдачи на запрос (как в b2b)
+          NOTIFY_URL: 'https://utdteam.app.n8n.cloud/webhook/utd-parser-notify'
+        run: python run.py ecom
+
+      - name: Commit updated dedup state
+        if: always()
+        run: |
+          git config user.name  "utd-parser-bot"
+          git config user.email "utd-parser-bot@users.noreply.github.com"
+          git add data/*.json 2>/dev/null || true
+          git commit -m "ecom state: $(date -u +%F)" || echo "no state changes"
+          git pull --rebase --autostash || true
+          git push || echo "nothing to push"
