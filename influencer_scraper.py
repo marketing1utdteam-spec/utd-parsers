@@ -34,7 +34,7 @@ Architecture unchanged from v3 (two-stage discovery → contact pipeline):
   Stage 2: Go to THEIR /contact or /about page for email — not to the article itself
 """
 
-import os, re, json, time, random, signal, logging, argparse
+import os, re, json, time, random, signal, logging, argparse, hashlib
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from email.utils import parsedate_to_datetime
@@ -648,9 +648,23 @@ def is_excluded_path(url):
 # CREATOR REGISTRY — cross-module, cross-run dedup
 # =========================================================================
 
+def hash_key(s: str) -> str:
+    """SHA256 of a normalised string. Emails, and creator keys (which contain
+    domains / channel-ids / profile URLs) are stored HASHED in the committed
+    data/*.json because the repo is PUBLIC. Dedup still works: equal inputs →
+    equal hashes. Real emails go only to the private Excel + Google Sheet."""
+    return hashlib.sha256(str(s).lower().strip().encode()).hexdigest()
+
+
 def creator_key(platform, identifier):
-    """Stable key for a unique creator entity."""
+    """Stable key for a unique creator entity (HASHED before it is stored/looked
+    up in the public registry — see registry_key)."""
     return f"{platform.lower()}:{identifier.lower().removeprefix('www.')}"
+
+
+def registry_key(platform, identifier):
+    """Hashed creator key used as the dict key in the persisted creator registry."""
+    return hash_key(creator_key(platform, identifier))
 
 
 # =========================================================================
@@ -759,7 +773,7 @@ def run_blog_module(state, seen_creators, seen_emails, max_requests, stop):
                 continue
             d = domain_of(link)
             if d and is_big_publisher(d):
-                seen_creators.setdefault(creator_key("blog", d), "skipped:big_publisher")
+                seen_creators.setdefault(registry_key("blog", d), "skipped:big_publisher")
                 continue
             if d and d not in domains_this_batch:
                 domains_this_batch[d] = (link, item.get("title", ""))
@@ -768,7 +782,7 @@ def run_blog_module(state, seen_creators, seen_emails, max_requests, stop):
             if stop["flag"] or req_used >= max_requests:
                 break
 
-            ck = creator_key("blog", domain)
+            ck = registry_key("blog", domain)
             if ck in seen_creators:
                 logging.info(f"  ⟳ {domain} already in creator registry, skip")
                 continue
@@ -812,12 +826,13 @@ def run_blog_module(state, seen_creators, seen_emails, max_requests, stop):
                 seen_creators[ck] = "skipped:no_email"
                 continue
 
-            if email in seen_emails:
+            eh = hash_key(email)
+            if eh in seen_emails:
                 seen_creators[ck] = "skipped:dup_email"
                 continue
 
-            seen_emails.add(email)
-            seen_creators[ck] = email
+            seen_emails.add(eh)
+            seen_creators[ck] = eh          # store hashed email in the public registry
             signals_str = ", ".join(signals)
             new_rows.append({
                 "email":        email,
@@ -965,7 +980,7 @@ def run_youtube_module(state, seen_creators, seen_emails, max_searches, stop):
             else:
                 cid = None
             if cid and cid not in new_ch_ids \
-                    and creator_key("yt", cid) not in seen_creators:
+                    and registry_key("yt", cid) not in seen_creators:
                 new_ch_ids.append(cid)
         new_ch_ids = new_ch_ids[:50]   # channels API limit per call
 
@@ -979,7 +994,7 @@ def run_youtube_module(state, seen_creators, seen_emails, max_searches, stop):
 
             for ch in (ch_data or {}).get("items", []):
                 ch_id  = ch["id"]
-                ck     = creator_key("yt", ch_id)
+                ck     = registry_key("yt", ch_id)
 
                 if ck in seen_creators:
                     continue
@@ -1016,7 +1031,7 @@ def run_youtube_module(state, seen_creators, seen_emails, max_searches, stop):
                     ext_domain = domain_of(link)
                     # BUG FIX: раньше сравнивали домен с values() реестра
                     # (там лежат email/статусы, не домены) — проверка не работала
-                    if creator_key("blog", ext_domain) in seen_creators \
+                    if registry_key("blog", ext_domain) in seen_creators \
                             or is_big_publisher(ext_domain):
                         continue
                     e, src = find_best_contact_email(link)
@@ -1033,7 +1048,8 @@ def run_youtube_module(state, seen_creators, seen_emails, max_searches, stop):
                     continue
 
                 chosen = best_email(all_emails)
-                if not chosen or chosen in seen_emails:
+                chosen_h = hash_key(chosen) if chosen else ""
+                if not chosen or chosen_h in seen_emails:
                     seen_creators[ck] = "skipped:dup_email"
                     continue
 
@@ -1048,8 +1064,8 @@ def run_youtube_module(state, seen_creators, seen_emails, max_searches, stop):
                     if v.get("id", {}).get("videoId")
                 ]
 
-                seen_emails.add(chosen)
-                seen_creators[ck] = chosen
+                seen_emails.add(chosen_h)
+                seen_creators[ck] = chosen_h    # hashed email in the public registry
                 new_rows.append({
                     "email":        chosen,
                     "name":         name,
@@ -1190,7 +1206,7 @@ def run_social_module(state, seen_creators, seen_emails, max_requests, stop):
             if not profile_url:
                 continue
 
-            ck = creator_key(platform, profile_url)
+            ck = registry_key(platform, profile_url)
             if ck in seen_creators:
                 continue
 
@@ -1208,13 +1224,13 @@ def run_social_module(state, seen_creators, seen_emails, max_requests, stop):
 
             if external_site:
                 ext_d = domain_of(external_site)
-                ext_ck = creator_key("blog", ext_d)
+                ext_ck = registry_key("blog", ext_d)
                 if ext_ck not in seen_creators and not is_theme_creator(ext_d) \
                         and not is_big_publisher(ext_d):
                     ext_email, contact_src = find_best_contact_email(external_site)
                     time.sleep(random.uniform(*PAGE_DELAY))
                     if ext_email:
-                        seen_creators[ext_ck] = ext_email
+                        seen_creators[ext_ck] = hash_key(ext_email)   # hashed in public registry
 
             all_emails = direct | ({ext_email} if ext_email else set())
             if not all_emails:
@@ -1222,12 +1238,13 @@ def run_social_module(state, seen_creators, seen_emails, max_requests, stop):
                 continue
 
             chosen = best_email(all_emails)
-            if not chosen or chosen in seen_emails:
+            chosen_h = hash_key(chosen) if chosen else ""
+            if not chosen or chosen_h in seen_emails:
                 seen_creators[ck] = "skipped:dup_email"
                 continue
 
-            seen_emails.add(chosen)
-            seen_creators[ck] = chosen
+            seen_emails.add(chosen_h)
+            seen_creators[ck] = chosen_h        # hashed email in the public registry
             new_rows.append({
                 "email":        chosen,
                 "name":         profile_name,
@@ -1251,12 +1268,14 @@ def run_social_module(state, seen_creators, seen_emails, max_requests, stop):
 # =========================================================================
 
 def load_existing_emails(path):
+    """Return a set of HASHED emails from the (private, local) xlsx, so the
+    in-memory dedup set is uniformly hash-based."""
     seen = set()
     if os.path.exists(path):
         wb = load_workbook(path)
         for row in wb.active.iter_rows(min_row=2, values_only=True):
             if row and row[0]:
-                seen.add(str(row[0]).lower())
+                seen.add(hash_key(str(row[0])))
     return seen
 
 
@@ -1421,20 +1440,29 @@ def main(cse_budget, yt_budget, output_path):
     state["blog_cse_used"]    = 0
     state["yt_searches_used"] = 0
     state["social_cse_used"]  = 0
-    seen_creators = load_json(PROCESSED_CREATORS, {})   # {creator_key: email_or_status}
-    seen_emails  = load_existing_emails(output_path)
-    # Fold emails already recorded in the creator registry into the dedup set —
-    # otherwise the same email can be re-appended when the Sheet read fails
-    # (runner's xlsx is ephemeral in GitHub Actions).
-    seen_emails |= {v for v in seen_creators.values()
-                    if isinstance(v, str) and "@" in v and not v.startswith("skipped")}
+    seen_creators = load_json(PROCESSED_CREATORS, {})   # {hashed_creator_key: hashed_email_or_status}
+    seen_emails  = load_existing_emails(output_path)    # already a set of HASHED emails
+    # Fold hashed emails already recorded in the creator registry into the dedup
+    # set — otherwise the same email can be re-appended when the Sheet read fails
+    # (runner's xlsx is ephemeral in GitHub Actions). Registry values are either
+    # a 64-hex SHA256 email hash or a "skipped:*" status. (A legacy raw email is
+    # hashed on the fly for backward compatibility.)
+    def _as_email_hash(v):
+        if not isinstance(v, str) or v.startswith("skipped"):
+            return None
+        if re.fullmatch(r"[0-9a-f]{64}", v):     # already a stored hash
+            return v
+        if "@" in v:                             # legacy raw email → hash it
+            return hash_key(v)
+        return None
+    seen_emails |= {h for h in (_as_email_hash(v) for v in seen_creators.values()) if h}
 
-    # Google Sheets — connect and fold its existing emails into the dedup set
-    # so we never append a contact that is already in the live n8n sheet.
+    # Google Sheets — connect and fold its existing emails (HASHED) into the dedup
+    # set so we never append a contact that is already in the live n8n sheet.
     sheets = SheetsSync(SHEETS_SPREADSHEET_ID, SHEETS_WORKSHEET_GID, SHEETS_CREDS_FILE)
     if sheets.connect():
         sheet_emails = sheets.existing_emails()
-        seen_emails |= sheet_emails
+        seen_emails |= {hash_key(e) for e in sheet_emails}
         logging.info(f"Startup: {len(sheet_emails)} emails already in Google Sheet.")
 
     logging.info(

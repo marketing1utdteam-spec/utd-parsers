@@ -920,11 +920,14 @@ def scrape_company(home_url: str, session: requests.Session,
     tried = 0
 
     for url in pages:
-        if not url or url in visited:
+        if not url:
+            continue
+        uh = hash_key(url)                # visited stores URL hashes (repo is public)
+        if uh in visited:
             continue
         if tried >= MAX_SUBPAGES + 1:
             break
-        visited.add(url)
+        visited.add(uh)
         tried += 1
         try:
             resp = session.get(url, headers=_headers(), timeout=13,
@@ -1098,6 +1101,14 @@ class SheetsUploader:
 #   💾  STATE
 # ═══════════════════════════════════════════════════════════════════
 
+def hash_key(s: str) -> str:
+    """SHA256 of a normalised string. Used to store emails/domains in the
+    committed data/*.json as one-way hashes (repo is PUBLIC) while keeping
+    dedup working: hash(email) collides iff the emails are equal.
+    Real emails/domains are still written to the private Google Sheet + Excel."""
+    return hashlib.sha256(str(s).lower().strip().encode()).hexdigest()
+
+
 def _default_state() -> dict:
     return {"version": "4.0", "query_counter": 0, "used_query_hashes": [],
             "emails": {}, "seen_domains": [], "session_count": 0,
@@ -1205,9 +1216,10 @@ class EmailHarvester:
         if not url or not is_company_url(url):
             return False
         domain = registrable_domain(url)
-        if not domain or domain in self.seen_domains:
+        dh = hash_key(domain) if domain else ""
+        if not domain or dh in self.seen_domains:
             return False
-        self.seen_domains.add(domain)        # one shot per domain per DB
+        self.seen_domains.add(dh)             # one shot per domain per DB (stored hashed)
 
         log.info(f"  🌐 {domain}")
         data = scrape_company(url, self.http, self.visited)
@@ -1216,7 +1228,8 @@ class EmailHarvester:
             data["company"] = domain         # never store listicle titles
 
         email = data["email"]
-        if not email or email in self.state["emails"]:
+        eh = hash_key(email) if email else ""
+        if not email or eh in self.state["emails"]:
             return False
 
         # ── Deliverability + liveness gauntlet ──────────────────
@@ -1273,8 +1286,11 @@ class EmailHarvester:
                "status": status, "score": score,
                "method": f"{method}+mx{mtag}",
                "date": datetime.now().strftime("%Y-%m-%d %H:%M")}
-        self.state["emails"][email] = rec
-        self._buf.append({"email": email, **rec})
+        # Committed state (public repo): key by SHA256(email), value carries NO
+        # raw email/domain/url/company — only non-identifying metadata for stats.
+        self.state["emails"][eh] = {"status": status, "score": score,
+                                    "date": rec["date"]}
+        self._buf.append({"email": email, **rec})   # real email → private Excel/Sheets
         if len(self._buf) >= 12:
             self._flush()
         return True

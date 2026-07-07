@@ -1107,11 +1107,14 @@ def scrape_store(home_url: str, session: requests.Session,
 
     while pages:
         url = pages.pop(0)
-        if not url or url in visited:
+        if not url:
+            continue
+        uh = hash_key(url)                # visited stores URL hashes (repo is public)
+        if uh in visited:
             continue
         if tried >= MAX_SUBPAGES + 1:
             break
-        visited.add(url)
+        visited.add(uh)
         tried += 1
         try:
             resp = session.get(url, headers=_headers(), timeout=13,
@@ -1336,6 +1339,14 @@ class SheetsUploader:
 #   💾  STATE
 # ═══════════════════════════════════════════════════════════════════
 
+def hash_key(s: str) -> str:
+    """SHA256 of a normalised string. Used to store emails/domains in the
+    committed data/*.json as one-way hashes (repo is PUBLIC) while keeping
+    dedup working: hash(email) collides iff the emails are equal.
+    Real emails/domains are still written to the private Google Sheet + Excel."""
+    return hashlib.sha256(str(s).lower().strip().encode()).hexdigest()
+
+
 def _default_state() -> dict:
     return {"version": "1.0", "query_counter": 0, "used_query_hashes": [],
             "emails": {}, "seen_domains": [], "session_count": 0,
@@ -1426,7 +1437,7 @@ class EcomHarvester:
             # fold the live sheet's emails into dedup — never re-append
             sheet_emails = self.sheets.existing_emails()
             for em in sheet_emails:
-                self.state["emails"].setdefault(em, {"source": "sheet"})
+                self.state["emails"].setdefault(hash_key(em), {"source": "sheet"})
             log.info(f"  📥 {len(sheet_emails)} emails already in the sheet (dedup).")
 
     def _stop(self, sig, frame):
@@ -1449,18 +1460,20 @@ class EcomHarvester:
         if not url or not is_store_url(url):
             return False
         domain = registrable_domain(url)
-        if not domain or domain in self.seen_domains:
+        dh = hash_key(domain) if domain else ""
+        if not domain or dh in self.seen_domains:
             return False
-        self.seen_domains.add(domain)        # one shot per domain per DB
+        self.seen_domains.add(dh)             # one shot per domain per DB (stored hashed)
 
         log.info(f"  🌐 {domain}")
         data = scrape_store(url, self.http, self.visited)
 
         # redirect may land on an already-seen custom domain
         if data["domain"] != domain:
-            if data["domain"] in self.seen_domains:
+            dh2 = hash_key(data["domain"]) if data["domain"] else ""
+            if dh2 in self.seen_domains:
                 return False
-            self.seen_domains.add(data["domain"])
+            self.seen_domains.add(dh2)
 
         # ── HARD GATE: must be a Shopify storefront ──────────────
         if not data["shopify"]:
@@ -1471,7 +1484,8 @@ class EcomHarvester:
             data["store"] = data["domain"]   # never store listicle titles
 
         email = data["email"]
-        if not email or email in self.state["emails"]:
+        eh = hash_key(email) if email else ""
+        if not email or eh in self.state["emails"]:
             return False
 
         # ── Deliverability + liveness gauntlet ──────────────────
@@ -1526,8 +1540,13 @@ class EcomHarvester:
                "industry": data["industry"], "theme": data["theme"],
                "validated_by": f"{method}+shopify+mx{mtag}",
                "date": datetime.now().strftime("%Y-%m-%d %H:%M")}
-        self.state["emails"][email] = {k: v for k, v in rec.items() if k != "email"}
-        self._buf.append(rec)
+        # Committed state (public repo): key by SHA256(email), value carries NO
+        # raw email/store/url — only non-identifying metadata for stats.
+        # NOTE: 'theme' is intentionally NOT stored here — scraped theme strings
+        # sometimes embed the store's domain, which would re-leak PII.
+        self.state["emails"][eh] = {"status": status, "score": score,
+                                    "industry": data["industry"], "date": rec["date"]}
+        self._buf.append(rec)                        # real email → private Excel/Sheets
         if len(self._buf) >= 12:
             self._flush()
         return True
