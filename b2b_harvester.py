@@ -71,6 +71,10 @@ PROFILE = {
         "case studies", "portfolio", "client projects", "web studio",
         "design studio", "shopify partner", "shopify expert", "we build",
         "we design", "we develop", "conversion optimization",
+        # Local-language agency terms (DE/FR/ES/IT/NL/PT/PL) so non-English
+        # agencies pass classification without loosening strictness.
+        "agentur", "webagentur", "webdesign", "webentwicklung", "onlineshop",
+        "agence", "agencia", "agenzia", "bureau", "agência", "agencja",
     ],
 
     # Words that DISQUALIFY a company (wrong industry / not an agency).
@@ -119,7 +123,7 @@ SHEETS_CREDS_FILE     = os.environ.get("GOOGLE_CREDS_FILE", os.path.join(_STATE_
 MAX_GOOGLE_QUERIES  = int(os.environ.get("MAX_GOOGLE_QUERIES", "50"))  # new unique Google searches per session
 RESULTS_PER_QUERY   = 10    # Google results per query (max 10)
 SEARCH_PAGES        = int(os.environ.get("SEARCH_PAGES", "2"))  # result pages per query (each page = 1 API call)
-MAX_SUBPAGES        = 3     # extra subpages checked per domain
+MAX_SUBPAGES        = 5     # extra subpages checked per domain (covers local legal pages: impressum/mentions-legales/aviso-legal)
 MIN_SCORE           = 60    # keep contacts scoring >= this (0-100)
 
 # ─── Mailbox verification (optional free-tier API) ──────────────
@@ -729,7 +733,20 @@ class MailboxVerifier:
 # ═══════════════════════════════════════════════════════════════════
 
 class QueryGenerator:
-    """Unlimited unique, niche-targeted Google queries (deterministic)."""
+    """Unlimited unique, niche-targeted Google queries (deterministic).
+
+    v4.1 — MULTILINGUAL. English tight queries have dried up (Google returns
+    ~2 results for tight EN queries), while non-English markets are a huge
+    fresh vein (DE "shopify agentur" impressum ≈15k, ES "agencia shopify"
+    contacto ≈9k, DE webagentur ≈5.5k — all REAL agencies). Each generated
+    query now carries a language tag (lang_de/fr/es/... or lang_en) that the
+    GoogleClient turns into the `lr` restrict-language parameter. Local
+    legal/contact pages (Impressum, mentions légales, aviso legal) are
+    required to carry an email by law → strongest possible signal.
+
+    Every generated query is still md5-hashed and deduped via used_hashes so
+    the deterministic counter mechanism is preserved unchanged.
+    """
 
     _TYPE = ["agency", "studio", "company", "team", "design studio",
              "development studio", "digital agency", "web studio",
@@ -750,26 +767,12 @@ class QueryGenerator:
         "UK", "London", "Manchester", "Birmingham", "Bristol",
         "Leeds", "Glasgow", "Edinburgh", "Liverpool", "Nottingham",
         "Ireland", "Dublin",
-        # Europe
-        "Germany", "Berlin", "Munich", "Hamburg", "Cologne",
-        "Netherlands", "Amsterdam", "Rotterdam", "Utrecht",
-        "France", "Paris", "Lyon", "Spain", "Madrid", "Barcelona",
-        "Valencia", "Italy", "Milan", "Rome", "Portugal", "Lisbon",
-        "Porto", "Poland", "Warsaw", "Krakow", "Wroclaw",
-        "Czech Republic", "Prague", "Austria", "Vienna",
-        "Switzerland", "Zurich", "Geneva", "Sweden", "Stockholm",
-        "Denmark", "Copenhagen", "Norway", "Oslo", "Finland", "Helsinki",
-        "Belgium", "Brussels", "Antwerp", "Romania", "Bucharest",
-        "Bulgaria", "Sofia", "Croatia", "Zagreb", "Greece", "Athens",
-        "Estonia", "Tallinn", "Latvia", "Riga", "Lithuania", "Vilnius",
-        "Ukraine", "Kyiv", "Lviv", "Hungary", "Budapest", "Serbia", "Belgrade",
-        # APAC & other
+        # Australia / NZ / Singapore (English-speaking APAC)
         "Australia", "Sydney", "Melbourne", "Brisbane", "Perth", "Adelaide",
-        "Singapore", "New Zealand", "Auckland", "Dubai", "UAE",
-        "South Africa", "Cape Town", "Johannesburg",
+        "Singapore", "New Zealand", "Auckland",
     ]
 
-    # contact-intent suffix + EXCLUDE article/marketplace noise.
+    # contact-intent suffix + EXCLUDE article/marketplace noise (ENGLISH).
     _EXCLUDE = '-"top 10" -"best" -blog -listicle -clutch -upwork -fiverr -jobs -careers'
     _SUFFIX = [
         f'"contact us" ("info@" OR "hello@") {_EXCLUDE}',
@@ -784,6 +787,105 @@ class QueryGenerator:
         f'"shopify partner" contact {_EXCLUDE}',
     ]
 
+    # ── LOCAL-LANGUAGE query pools ──────────────────────────────────────
+    # Each entry is a ready-made tight query template. {c} is filled with a
+    # local city (or dropped). These are the fresh, deep veins. Local
+    # contact/legal words (Impressum, Kontakt, mentions légales, aviso legal,
+    # contatti, contacto...) are legally required to carry an email address.
+    _LOCAL = {
+        "lang_de": {
+            "cities": ["Berlin", "München", "Hamburg", "Köln", "Frankfurt",
+                       "Stuttgart", "Düsseldorf", "Wien", "Zürich", "Leipzig"],
+            "templates": [
+                '"shopify agentur" impressum',
+                '"shopify agentur" kontakt',
+                '"webagentur" "shopify" impressum',
+                '"shopify agentur" {c} impressum',
+                '"shopify agentur" {c} kontakt',
+                '"e-commerce agentur" shopify impressum',
+                '"webagentur" {c} shopify kontakt',
+                '"shopify partner" agentur impressum',
+                '"onlineshop agentur" shopify kontakt',
+            ],
+        },
+        "lang_fr": {
+            "cities": ["Paris", "Lyon", "Marseille", "Bordeaux", "Toulouse",
+                       "Lille", "Nantes", "Bruxelles", "Genève"],
+            "templates": [
+                '"agence shopify" contact',
+                '"agence shopify" "mentions légales"',
+                '"agence e-commerce shopify" contact',
+                '"agence shopify" {c} contact',
+                '"agence shopify" {c} "mentions légales"',
+                '"agence web" shopify "mentions légales"',
+                '"shopify partner" agence contact',
+            ],
+        },
+        "lang_es": {
+            "cities": ["Madrid", "Barcelona", "Valencia", "Sevilla",
+                       "Málaga", "Bilbao", "Zaragoza"],
+            "templates": [
+                '"agencia shopify" contacto',
+                '"agencia shopify" "aviso legal"',
+                '"agencia ecommerce shopify" contacto',
+                '"agencia shopify" {c} contacto',
+                '"agencia shopify" {c}',
+                '"agencia ecommerce" shopify "aviso legal"',
+                '"shopify partner" agencia contacto',
+            ],
+        },
+        "lang_it": {
+            "cities": ["Milano", "Roma", "Torino", "Napoli", "Bologna",
+                       "Firenze", "Verona"],
+            "templates": [
+                '"agenzia shopify" contatti',
+                '"agenzia shopify" contattaci',
+                '"agenzia shopify" {c} contatti',
+                '"agenzia e-commerce shopify" contatti',
+                '"shopify partner" agenzia contatti',
+            ],
+        },
+        "lang_nl": {
+            "cities": ["Amsterdam", "Rotterdam", "Utrecht", "Den Haag",
+                       "Eindhoven", "Antwerpen", "Gent"],
+            "templates": [
+                '"shopify bureau" contact',
+                '"shopify webshop laten maken"',
+                '"shopify bureau" {c} contact',
+                '"e-commerce bureau" shopify contact',
+                '"shopify partner" bureau contact',
+            ],
+        },
+        "lang_pt": {
+            "cities": ["Lisboa", "Porto", "Braga", "São Paulo",
+                       "Rio de Janeiro", "Lisbon"],
+            "templates": [
+                '"agência shopify" contato',
+                '"agência shopify" contacto',
+                '"agência shopify" {c} contato',
+                '"agência e-commerce" shopify contato',
+                '"shopify partner" agência contato',
+            ],
+        },
+        "lang_pl": {
+            "cities": ["Warszawa", "Kraków", "Wrocław", "Poznań",
+                       "Gdańsk", "Łódź"],
+            "templates": [
+                '"agencja shopify" kontakt',
+                '"agencja shopify" {c} kontakt',
+                '"agencja e-commerce" shopify kontakt',
+                '"shopify partner" agencja kontakt',
+            ],
+        },
+    }
+    # Languages weighted so local (fresh) markets dominate; English stays in
+    # the mix but is a minority. Repetition = higher probability.
+    _LANG_POOL = (
+        ["lang_de"] * 5 + ["lang_fr"] * 4 + ["lang_es"] * 4 +
+        ["lang_it"] * 3 + ["lang_nl"] * 3 + ["lang_pt"] * 2 +
+        ["lang_pl"] * 2 + ["lang_en"] * 4
+    )
+
     def __init__(self, counter: int, used_hashes: set):
         self.counter     = counter
         self.used_hashes = used_hashes
@@ -791,9 +893,7 @@ class QueryGenerator:
     def _hash(self, q: str) -> str:
         return hashlib.md5(q.lower().strip().encode()).hexdigest()[:14]
 
-    def _build(self) -> str:
-        rng = random.Random(self.counter)
-        self.counter += 1
+    def _build_en(self, rng) -> str:
         svc = rng.choice(PROFILE["services"])
         typ = rng.choice(self._TYPE)
         loc = rng.choice(self._LOC)
@@ -806,14 +906,31 @@ class QueryGenerator:
         else:        q = f'"{svc}" agency {loc_s}{sfx}'
         return re.sub(r"\s{2,}", " ", q).strip()
 
+    def _build_local(self, rng, lang: str) -> str:
+        pool = self._LOCAL[lang]
+        tpl  = rng.choice(pool["templates"])
+        if "{c}" in tpl:
+            tpl = tpl.replace("{c}", rng.choice(pool["cities"]))
+        return re.sub(r"\s{2,}", " ", tpl).strip()
+
+    def _build(self) -> tuple:
+        """Return (query, lang). lang is an `lr` code like 'lang_de'."""
+        rng = random.Random(self.counter)
+        self.counter += 1
+        lang = rng.choice(self._LANG_POOL)
+        if lang == "lang_en":
+            return self._build_en(rng), "lang_en"
+        return self._build_local(rng, lang), lang
+
     def next_batch(self, n: int) -> list:
+        """Return a list of (query, lang) tuples, deduped by query hash."""
         queries, attempts = [], 0
         while len(queries) < n and attempts < n * 300:
-            q = self._build()
+            q, lang = self._build()
             h = self._hash(q)
             if h not in self.used_hashes and len(q) > 8:
                 self.used_hashes.add(h)
-                queries.append(q)
+                queries.append((q, lang))
             attempts += 1
         return queries
 
@@ -836,16 +953,22 @@ class GoogleClient:
         log.warning(f"  🔄 API key rotated ({reason}) → pair #{self.idx}")
         time.sleep(API_ROT_WAIT)
 
-    def search(self, query: str, start: int = 1) -> list:
+    def search(self, query: str, start: int = 1, lang: str = None) -> list:
+        # `lang` is an `lr` restrict-language code (e.g. 'lang_de'). When set,
+        # results are restricted to that language — essential for the fresh
+        # non-English veins (DE/FR/ES/...). When None, no lr → widest results.
         for _ in range(len(self.pairs)):
             pair = self.pairs[self.idx]
             try:
+                params = {"key": pair["api_key"], "cx": pair["cse_id"],
+                          "q": query, "num": RESULTS_PER_QUERY,
+                          "start": start}
+                if lang:
+                    params["lr"] = lang
+                    params["hl"] = lang.replace("lang_", "")  # UI hint hint
                 resp = requests.get(
                     self._BASE,
-                    params={"key": pair["api_key"], "cx": pair["cse_id"],
-                            "q": query, "num": RESULTS_PER_QUERY,
-                            "start": start,
-                            "hl": "en", "lr": "lang_en"},
+                    params=params,
                     timeout=15,
                 )
                 self.calls += 1
@@ -877,7 +1000,15 @@ def _headers() -> dict:
         "Connection":      "keep-alive",
     }
 
-_SUBPAGES = ["/contact", "/contact-us", "/get-in-touch", "/about", "/about-us"]
+# Ordered by extraction value. Local legal/contact pages are interleaved
+# high because, by law, they must carry a real email address — the strongest
+# extraction targets on non-EN sites. Only the first MAX_SUBPAGES are fetched
+# per domain, so highest-signal paths come first.
+_SUBPAGES = [
+    "/contact", "/impressum", "/kontakt", "/contact-us",
+    "/mentions-legales", "/aviso-legal", "/contacto", "/contatti",
+    "/contato", "/get-in-touch", "/imprint", "/about", "/about-us",
+]
 
 
 def _company_name(soup: BeautifulSoup, url: str) -> str:
@@ -1301,13 +1432,14 @@ class EmailHarvester:
         queries = self.qgen.next_batch(MAX_GOOGLE_QUERIES)
         log.info(f"  Generated {len(queries)} queries (counter #{self.qgen.counter})")
         added = 0
-        for i, q in enumerate(queries, 1):
+        for i, (q, lang) in enumerate(queries, 1):
             if not self.running:
                 break
-            log.info(f"\n  [G {i}/{len(queries)}] {q}")
+            log.info(f"\n  [G {i}/{len(queries)}] ({lang}) {q}")
             urls = []
             for page in range(SEARCH_PAGES):
-                batch = self.google.search(q, start=1 + page * RESULTS_PER_QUERY)
+                batch = self.google.search(q, start=1 + page * RESULTS_PER_QUERY,
+                                           lang=lang)
                 urls += batch
                 if len(batch) < RESULTS_PER_QUERY:
                     break  # выдача кончилась, вторую страницу не тратим
