@@ -525,9 +525,40 @@ def with_sheets_backoff(fn, retries=5, base=10, cap=30):
         raise last
 
 
+def _records_from_values(values):
+    """Build list-of-dicts from raw rows, tolerating empty/duplicate headers.
+
+    gspread's get_all_records() raises on blank or duplicate header cells; real
+    UTD sheets have both. This mirrors the n8n Sheets node: the first row is the
+    header, real named columns are preserved verbatim, blank headers become
+    unique `_colN` keys, and duplicate names get a numeric suffix.
+    """
+    if not values:
+        return []
+    header = values[0]
+    keys, seen = [], {}
+    for i, h in enumerate(header):
+        name = (h or "").strip()
+        if not name:
+            key = "_col%d" % i
+        elif name in seen:
+            seen[name] += 1
+            key = "%s_%d" % (name, seen[name])
+        else:
+            seen[name] = 0
+            key = name
+        keys.append(key)
+    rows = []
+    for r in values[1:]:
+        rows.append({k: (r[i] if i < len(r) else "") for i, k in enumerate(keys)})
+    return rows
+
+
 def read_rows_ws(ws):
-    """One read call: worksheet rows as a list of dicts, with 429 backoff."""
-    return with_sheets_backoff(lambda: ws.get_all_records())
+    """One read call: worksheet rows as a list of dicts, with 429 backoff.
+
+    Tolerant of blank/duplicate header cells (see _records_from_values)."""
+    return with_sheets_backoff(lambda: _records_from_values(ws.get_all_values()))
 
 
 def batch_update_cells(ws, cell_updates, retries=5):
@@ -546,9 +577,11 @@ def batch_update_cells(ws, cell_updates, retries=5):
 
 
 def read_rows(sheet_id, tab):
-    """Return worksheet rows as a list of dicts (header row = keys)."""
+    """Return worksheet rows as a list of dicts (header row = keys).
+
+    Tolerant of blank/duplicate header cells (see _records_from_values)."""
     ws = _open_ws(sheet_id, tab)
-    return with_sheets_backoff(lambda: ws.get_all_records())
+    return with_sheets_backoff(lambda: _records_from_values(ws.get_all_values()))
 
 
 def read_header(sheet_id, tab):
