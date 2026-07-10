@@ -51,25 +51,24 @@ import email_common as ec
 # Env var names match ecom_harvester.py (ECOM_SHEET_ID / ECOM_SHEET_TAB).
 # Defaults mirror the n8n «ECOM_auto» workflow (spreadsheet id + "Ecom Contacts"
 # tab), which is the sheet this autoresponder actually operates on.
-SHEET_ID = os.environ.get(
-    "ECOM_SHEET_ID", "1ggMS5Hko2jCY5eqcPvasBy3P6hAwbw8rldr4cS3Zeo4").strip()
+SHEET_ID = os.environ.get("ECOM_SHEET_ID", "").strip()
 SHEET_TAB = os.environ.get("ECOM_SHEET_TAB", "Ecom Contacts")
 
 # Our own mailbox addresses — inbound from these is a loop, not a prospect.
 # (VERBATIM from the n8n «Разбор» OWN list.)
-OWN_ADDRESSES = [
-    "sergey.utd@gmail.com",
-    "sergi.utd@gmail.com",
-    "serge.utd@gmail.com",
-    "serhii.smortkin.utd@gmail.com",
-]
+OWN_ADDRESSES = [a for a in (
+    os.environ.get("UTD_MAIL_SERGEY", ""),
+    os.environ.get("UTD_MAIL_SERGI", ""),
+    os.environ.get("UTD_MAIL_SERGE", ""),
+    os.environ.get("UTD_MAIL_SERHII", ""),
+) if a]
 
 # Mailboxes to process. Skipped automatically when no app-password is set.
-ACCOUNTS = [
-    {"user": "sergey.utd@gmail.com", "password": os.environ.get("GMAIL_APP_PW_SERGEY", "")},
-    {"user": "sergi.utd@gmail.com",  "password": os.environ.get("GMAIL_APP_PW_SERGI", "")},
-    {"user": "serge.utd@gmail.com",  "password": os.environ.get("GMAIL_APP_PW_SERGE", "")},
-]
+ACCOUNTS = [a for a in (
+    {"user": os.environ.get("UTD_MAIL_SERGEY", ""), "password": os.environ.get("GMAIL_APP_PW_SERGEY", "")},
+    {"user": os.environ.get("UTD_MAIL_SERGI", ""),  "password": os.environ.get("GMAIL_APP_PW_SERGI", "")},
+    {"user": os.environ.get("UTD_MAIL_SERGE", ""),  "password": os.environ.get("GMAIL_APP_PW_SERGE", "")},
+) if a["user"]]
 
 _STATE_DIR = os.environ.get("STATE_DIR", ".")
 STATE_FILE = os.path.join(_STATE_DIR, "ecom_autoresponder_state.json")

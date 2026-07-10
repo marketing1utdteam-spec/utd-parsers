@@ -37,19 +37,20 @@ import email_common as ec
 #   CONFIG
 # ═══════════════════════════════════════════════════════════════════
 
-SHEET_ID = os.environ.get(
-    "INFL_SHEET_ID", "12IiHIsdibJPRGYNyZfrvdmBDY9OjmsokdmL4GgWg4qQ")
+SHEET_ID = os.environ.get("INFL_SHEET_ID", "")
 SHEET_TAB = os.environ.get("INFL_SHEET_TAB", "Sheet1")
 
-INFL_GMAIL_USER = os.environ.get("INFL_GMAIL_USER", "sergey.utd@gmail.com")
+INFL_GMAIL_USER = os.environ.get("INFL_GMAIL_USER", os.environ.get("UTD_MAIL_SERGEY", ""))
 ACCOUNT = {"user": INFL_GMAIL_USER, "password": os.environ.get("GMAIL_APP_PW_SERGEY", "")}
 
-# «Match Replies to Contacts»: const MANAGER = 'serhii.smortkin.utd@gmail.com'
-MANAGER = os.environ.get("INFL_MANAGER_EMAIL", "serhii.smortkin.utd@gmail.com")
+# «Match Replies to Contacts»: const MANAGER = <manager email>
+MANAGER = os.environ.get("MANAGER_EMAIL", os.environ.get("INFL_MANAGER_EMAIL", ""))
 
 # Our own outreach mailbox — inbound from it is our own sent mail, not a reply.
-OWN_ADDRESSES = [INFL_GMAIL_USER, "sergey.utd@gmail.com", "serge.utd@gmail.com",
-                 "serhii.smortkin.utd@gmail.com"]
+OWN_ADDRESSES = [a for a in (INFL_GMAIL_USER,
+                             os.environ.get("UTD_MAIL_SERGEY", ""),
+                             os.environ.get("UTD_MAIL_SERGE", ""),
+                             os.environ.get("UTD_MAIL_SERHII", "")) if a]
 
 DRY_RUN = os.environ.get("DRY_RUN", "true").strip().lower() in ("1", "true", "yes", "on")
 

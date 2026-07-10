@@ -32,6 +32,8 @@ jobs:
           GMAIL_APP_PW_SERGE: ${{ secrets.GMAIL_APP_PW_SERGE }}
           GMAIL_APP_PW_SERGI: ${{ secrets.GMAIL_APP_PW_SERGI }}
           GMAIL_APP_PW_SERHII: ${{ secrets.GMAIL_APP_PW_SERHII }}
+          B2B_SHEET_ID: ${{ vars.B2B_SHEET_ID }}
+          UTD_MAIL_SERGEY: ${{ vars.UTD_MAIL_SERGEY }}
         run: python b2b_followup.py
       - name: Commit updated state
         if: always()

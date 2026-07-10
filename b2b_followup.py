@@ -43,13 +43,12 @@ import email_common as ec
 #   CONFIG
 # ═══════════════════════════════════════════════════════════════════
 
-SHEET_ID = os.environ.get(
-    "B2B_SHEET_ID", "1ggMS5Hko2jCY5eqcPvasBy3P6hAwbw8rldr4cS3Zeo4")
+SHEET_ID = os.environ.get("B2B_SHEET_ID", "")
 SHEET_TAB = os.environ.get("B2B_SHEET_TAB", "IT Companies — Emails")
 
 # Cold-outreach mailbox — "Sergey | UTD Web" (same box as b2b_sender).
 ACCOUNT = {
-    "user": os.environ.get("B2B_SENDER_USER", "sergey.utd@gmail.com"),
+    "user": os.environ.get("B2B_SENDER_USER", os.environ.get("UTD_MAIL_SERGEY", "")),
     "password": os.environ.get("GMAIL_APP_PW_SERGEY", ""),
 }
 SENDER_NAME = "Sergey | UTD Web"  # n8n Gmail senderName (see assumptions)

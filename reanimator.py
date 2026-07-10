@@ -33,13 +33,11 @@ import email_common as ec
 # ═══════════════════════════════════════════════════════════════════
 
 # B2B CRM — «Читать таблицу» / «Сброс в очередь».
-B2B_SHEET_ID = os.environ.get(
-    "B2B_SHEET_ID", "1ggMS5Hko2jCY5eqcPvasBy3P6hAwbw8rldr4cS3Zeo4")
+B2B_SHEET_ID = os.environ.get("B2B_SHEET_ID", "")
 B2B_SHEET_TAB = os.environ.get("B2B_SHEET_TAB", "IT Companies — Emails")
 
 # Influencer CRM — «Читать инфлюенсеров» / «Сброс в очередь (инфл)».
-INFL_SHEET_ID = os.environ.get(
-    "INFL_SHEET_ID", "12IiHIsdibJPRGYNyZfrvdmBDY9OjmsokdmL4GgWg4qQ")
+INFL_SHEET_ID = os.environ.get("INFL_SHEET_ID", "")
 INFL_SHEET_TAB = os.environ.get("INFL_SHEET_TAB", "Sheet1")
 
 # The exact status we reanimate, and the value we reset it to. VERBATIM.

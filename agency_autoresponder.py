@@ -49,28 +49,27 @@ import email_common as ec
 #   CONFIG
 # ═══════════════════════════════════════════════════════════════════
 
-SHEET_ID = os.environ.get(
-    "AGENCY_SHEET_ID", "1ggMS5Hko2jCY5eqcPvasBy3P6hAwbw8rldr4cS3Zeo4")
+SHEET_ID = os.environ.get("AGENCY_SHEET_ID", os.environ.get("B2B_SHEET_ID", ""))
 SHEET_TAB = os.environ.get("AGENCY_SHEET_TAB", "IT Companies — Emails")
 
 # Deal-review recipients after a signed agreement (Valeriy 2026-07-06/07-08).
-REVIEW_TO = [
-    "serhii.smortkin.utd@gmail.com",
-    "denys.davydov.utd@gmail.com",
-]
+REVIEW_TO = [a for a in (
+    os.environ.get("UTD_MAIL_SERHII", ""),
+    os.environ.get("UTD_MAIL_DENYS", ""),
+) if a]
 
 # Our own mailbox addresses — inbound from these is a loop, not a prospect.
-OWN_ADDRESSES = [
-    "sergey.utd@gmail.com",
-    "serge.utd@gmail.com",
-    "serhii.smortkin.utd@gmail.com",
-]
+OWN_ADDRESSES = [a for a in (
+    os.environ.get("UTD_MAIL_SERGEY", ""),
+    os.environ.get("UTD_MAIL_SERGE", ""),
+    os.environ.get("UTD_MAIL_SERHII", ""),
+) if a]
 
 # The two physical mailboxes to process.
-ACCOUNTS = [
-    {"user": "sergey.utd@gmail.com", "password": os.environ.get("GMAIL_APP_PW_SERGEY", "")},
-    {"user": "serge.utd@gmail.com",  "password": os.environ.get("GMAIL_APP_PW_SERGE", "")},
-]
+ACCOUNTS = [a for a in (
+    {"user": os.environ.get("UTD_MAIL_SERGEY", ""), "password": os.environ.get("GMAIL_APP_PW_SERGEY", "")},
+    {"user": os.environ.get("UTD_MAIL_SERGE", ""),  "password": os.environ.get("GMAIL_APP_PW_SERGE", "")},
+) if a["user"]]
 
 _STATE_DIR = os.environ.get("STATE_DIR", "./data")
 STATE_FILE = os.path.join(_STATE_DIR, "agency_autoresponder_state.json")

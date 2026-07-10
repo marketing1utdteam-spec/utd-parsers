@@ -59,8 +59,7 @@ import email_common as ec
 # ═══════════════════════════════════════════════════════════════════
 
 # Influencer CRM spreadsheet (from the n8n Google Sheets nodes).
-SHEET_ID = os.environ.get(
-    "INFL_SHEET_ID", "12IiHIsdibJPRGYNyZfrvdmBDY9OjmsokdmL4GgWg4qQ")
+SHEET_ID = os.environ.get("INFL_SHEET_ID", "")
 # INFL_SHEET_TAB = the rate-card tab that is written on every dialogue turn.
 PRICING_TAB = os.environ.get("INFL_SHEET_TAB", "Pricing")
 # The contacts tab (Sheet1) that carries Declined/Bounced/Send Failed/Auto Reply.
@@ -68,20 +67,20 @@ CONTACTS_TAB = os.environ.get("INFL_CONTACTS_TAB", "Sheet1")
 
 # Our own mailbox addresses (verbatim OWN list from the n8n «Разбор писем» node) —
 # inbound from these is a loop, not a creator.
-OWN_ADDRESSES = [
-    "sergey.utd@gmail.com",
-    "sergi.utd@gmail.com",
-    "serhii.smortkin.utd@gmail.com",
-]
+OWN_ADDRESSES = [a for a in (
+    os.environ.get("UTD_MAIL_SERGEY", ""),
+    os.environ.get("UTD_MAIL_SERGI", ""),
+    os.environ.get("UTD_MAIL_SERHII", ""),
+) if a]
 _OWN_SET = {a.lower() for a in OWN_ADDRESSES}
 
 # Physical mailboxes to scan (only those with an app-password are processed).
 # email_common "account" convention: {"user", "password"} with pw from env.
-ACCOUNTS = [
-    {"user": "sergey.utd@gmail.com",         "password": os.environ.get("GMAIL_APP_PW_SERGEY", "")},
-    {"user": "sergi.utd@gmail.com",          "password": os.environ.get("GMAIL_APP_PW_SERGI", "")},
-    {"user": "serhii.smortkin.utd@gmail.com", "password": os.environ.get("GMAIL_APP_PW_SERHII", "")},
-]
+ACCOUNTS = [a for a in (
+    {"user": os.environ.get("UTD_MAIL_SERGEY", ""), "password": os.environ.get("GMAIL_APP_PW_SERGEY", "")},
+    {"user": os.environ.get("UTD_MAIL_SERGI", ""),  "password": os.environ.get("GMAIL_APP_PW_SERGI", "")},
+    {"user": os.environ.get("UTD_MAIL_SERHII", ""), "password": os.environ.get("GMAIL_APP_PW_SERHII", "")},
+) if a["user"]]
 
 _STATE_DIR = os.environ.get("STATE_DIR", ".")
 STATE_FILE = os.path.join(_STATE_DIR, "data", "influencer_autoresponder_state.json")

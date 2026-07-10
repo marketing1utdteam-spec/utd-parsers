@@ -69,7 +69,7 @@ LOG_FILE              = os.path.join(_STATE_DIR, "scraper_v4.log")
 # We append ONLY to A–D (Email, Name, Platform, Profile URL) and never touch
 # E–I, so the n8n chain (which fills F–I) keeps working and the column count
 # of the document never changes. Append-only — existing rows are preserved.
-SHEETS_SPREADSHEET_ID = os.environ.get("INFLUENCER_SHEET_ID", "12IiHIsdibJPRGYNyZfrvdmBDY9OjmsokdmL4GgWg4qQ")
+SHEETS_SPREADSHEET_ID = os.environ.get("INFL_SHEET_ID", os.environ.get("INFLUENCER_SHEET_ID", ""))
 SHEETS_WORKSHEET_GID  = int(os.environ.get("INFLUENCER_SHEET_GID", "106542427"))
 SHEETS_CREDS_FILE     = os.environ.get("GOOGLE_CREDS_FILE", os.path.join(_STATE_DIR, "google_credentials.json"))
 SHEETS_COLUMNS        = 4   # values appended per row (A–D); MUST stay constant

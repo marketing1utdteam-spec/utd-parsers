@@ -32,6 +32,11 @@ jobs:
           GMAIL_APP_PW_SERGE: ${{ secrets.GMAIL_APP_PW_SERGE }}
           GMAIL_APP_PW_SERGI: ${{ secrets.GMAIL_APP_PW_SERGI }}
           GMAIL_APP_PW_SERHII: ${{ secrets.GMAIL_APP_PW_SERHII }}
+          B2B_SHEET_ID: ${{ vars.B2B_SHEET_ID }}
+          UTD_MAIL_SERGEY: ${{ vars.UTD_MAIL_SERGEY }}
+          UTD_MAIL_SERGE: ${{ vars.UTD_MAIL_SERGE }}
+          UTD_MAIL_SERHII: ${{ vars.UTD_MAIL_SERHII }}
+          UTD_MAIL_DENYS: ${{ vars.UTD_MAIL_DENYS }}
         run: python agency_autoresponder.py
       - name: Commit updated state
         if: always()

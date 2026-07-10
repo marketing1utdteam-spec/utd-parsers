@@ -47,16 +47,16 @@ except Exception:  # pragma: no cover
 # ═══════════════════════════════════════════════════════════════════
 
 # Same env var names / defaults as ecom_harvester.py so sender + harvester
-# read and write the SAME sheet tab. (In production ECOM_SHEET_ID is the
-# n8n id 1ggMS5Hko2jCY5eqcPvasBy3P6hAwbw8rldr4cS3Zeo4 and ECOM_SHEET_TAB
-# is "Ecom Contacts" — see the harvester's REQUIRED-no-default convention.)
+# read and write the SAME sheet tab. (In production ECOM_SHEET_ID is supplied
+# via the GitHub Actions env / a GitHub Variable and ECOM_SHEET_TAB is
+# "Ecom Contacts" — see the harvester's REQUIRED-no-default convention.)
 SHEET_ID = os.environ.get("ECOM_SHEET_ID", "").strip()
 SHEET_TAB = os.environ.get("ECOM_SHEET_TAB", "Contacts")
 
 # The mailbox we send from — persona "Sergey" (email_common "account" convention:
 # {"user","password"} with the Gmail app-password pulled from env by name).
 ACCOUNT = {
-    "user": os.environ.get("ECOM_SENDER_EMAIL", "sergey.utd@gmail.com"),
+    "user": os.environ.get("ECOM_SENDER_EMAIL", os.environ.get("UTD_MAIL_SERGEY", "")),
     "password": os.environ.get("GMAIL_APP_PW_SERGEY", ""),
 }
 # Gmail "From" display name used by the n8n Gmail node (senderName).

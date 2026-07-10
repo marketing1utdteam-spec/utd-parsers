@@ -37,7 +37,7 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           # ⚠️ создать таблицу (лист "Contacts", колонки A–O), расшарить на
           #    сервис-аккаунт и вписать её id сюда:
-          ECOM_SHEET_ID: '1ggMS5Hko2jCY5eqcPvasBy3P6hAwbw8rldr4cS3Zeo4'
+          ECOM_SHEET_ID: ${{ vars.ECOM_SHEET_ID }}
           ECOM_SHEET_TAB: 'Ecom Contacts'
           MAILBOX_PROVIDER: ''          # free gauntlet only (MX+domain+live)
           MAX_GOOGLE_QUERIES: '150'     # 150 запросов × 2 страницы = ~300 CSE-вызовов/прогон, укладывается в 6ч-лимит GitHub

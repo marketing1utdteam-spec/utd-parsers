@@ -38,6 +38,7 @@ jobs:
           MIN_YT_SUBSCRIBERS: '500'  # порог подписчиков YT-канала
           MIN_ACTIVITY_SCORE: '4'    # порог активности блога (из 8)
           NOTIFY_URL: 'https://utdteam.app.n8n.cloud/webhook/utd-parser-notify'
+          INFL_SHEET_ID: ${{ vars.INFL_SHEET_ID }}
         run: python run.py influencers
 
       - name: Commit updated dedup state

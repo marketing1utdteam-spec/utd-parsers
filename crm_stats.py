@@ -40,13 +40,11 @@ import email_common as ec
 # ═══════════════════════════════════════════════════════════════════
 
 # «Читать Б2Б» / «Запись Stats Б2Б»
-B2B_SHEET_ID = os.environ.get(
-    "B2B_SHEET_ID", "1ggMS5Hko2jCY5eqcPvasBy3P6hAwbw8rldr4cS3Zeo4")
+B2B_SHEET_ID = os.environ.get("B2B_SHEET_ID", "")
 B2B_SHEET_TAB = os.environ.get("B2B_SHEET_TAB", "IT Companies — Emails")
 
 # «Читать Инфл» / «Читать Pricing» / «Запись Stats Инфл»
-INFL_SHEET_ID = os.environ.get(
-    "INFL_SHEET_ID", "12IiHIsdibJPRGYNyZfrvdmBDY9OjmsokdmL4GgWg4qQ")
+INFL_SHEET_ID = os.environ.get("INFL_SHEET_ID", "")
 INFL_SHEET_TAB = os.environ.get("INFL_SHEET_TAB", "Sheet1")
 INFL_PRICING_TAB = os.environ.get("INFL_PRICING_TAB", "Pricing")
 
@@ -54,7 +52,7 @@ INFL_PRICING_TAB = os.environ.get("INFL_PRICING_TAB", "Pricing")
 STATS_TAB = os.environ.get("STATS_TAB", "Stats")
 
 # Summary email recipient (added for the GHA port — no email node in the n8n src).
-CRM_STATS_TO = os.environ.get("CRM_STATS_TO", "serhii.smortkin.utd@gmail.com")
+CRM_STATS_TO = os.environ.get("CRM_STATS_TO", "")
 
 # Gmail volume counts: the n8n getAll nodes had no time filter (a default page
 # limit). We count over a bounded window; override with GMAIL_COUNT_DAYS.
@@ -62,10 +60,10 @@ GMAIL_COUNT_DAYS = int(os.environ.get("GMAIL_COUNT_DAYS", "35"))
 SENT_MAILBOX = os.environ.get("SENT_MAILBOX", "[Gmail]/Sent Mail")
 
 # B2B outreach mailboxes («…я1» / «…я2»).
-B2B_ACCOUNTS = [
-    {"user": "sergey.utd@gmail.com", "password": os.environ.get("GMAIL_APP_PW_SERGEY", "")},
-    {"user": "serge.utd@gmail.com",  "password": os.environ.get("GMAIL_APP_PW_SERGE", "")},
-]
+B2B_ACCOUNTS = [a for a in (
+    {"user": os.environ.get("UTD_MAIL_SERGEY", ""), "password": os.environ.get("GMAIL_APP_PW_SERGEY", "")},
+    {"user": os.environ.get("UTD_MAIL_SERGE", ""),  "password": os.environ.get("GMAIL_APP_PW_SERGE", "")},
+) if a["user"]]
 
 # Influencer outreach mailboxes — addresses unknown in source; env-configurable.
 # When unset the counts stay 0, exactly like glen()'s try/catch → 0 in the n8n.

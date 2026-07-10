@@ -115,7 +115,7 @@ VISITED_FILE  = os.path.join(_STATE_DIR, "harvester_v4_visited.json")
 LOG_FILE      = os.path.join(_STATE_DIR, "harvester_v4.log")
 
 # ─── Google Sheets ───────────────────────────────────────────────
-SHEETS_SPREADSHEET_ID = os.environ.get("B2B_SHEET_ID", "1ggMS5Hko2jCY5eqcPvasBy3P6hAwbw8rldr4cS3Zeo4")
+SHEETS_SPREADSHEET_ID = os.environ.get("B2B_SHEET_ID", "")
 SHEETS_WORKSHEET_GID  = int(os.environ.get("B2B_SHEET_GID", "106542427"))
 SHEETS_CREDS_FILE     = os.environ.get("GOOGLE_CREDS_FILE", os.path.join(_STATE_DIR, "google_credentials.json"))
 

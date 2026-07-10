@@ -37,6 +37,7 @@ jobs:
           MAX_GOOGLE_QUERIES: '350'     # 350 запросов × 2 страницы × 2 прогона = ~1400 CSE-вызовов/день (квота 2100)
           SEARCH_PAGES: '2'             # брать 2 страницы выдачи на запрос (глубже, меньше повторов доменов)
           NOTIFY_URL: 'https://utdteam.app.n8n.cloud/webhook/utd-parser-notify'
+          B2B_SHEET_ID: ${{ vars.B2B_SHEET_ID }}
         run: python run.py b2b
 
       - name: Commit updated dedup state

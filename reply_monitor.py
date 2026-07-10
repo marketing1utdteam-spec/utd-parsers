@@ -13,7 +13,7 @@ What it does (mirrors the n8n nodes):
   • «Match Replies to Contacts» — match each inbound message to a sent contact,
     STRATEGY 1 by Thread ID, STRATEGY 2 by sender email; skip auto-replies /
     bounces / system mail; deduplicate one reply per contact.
-  • «Notify Manager» — email serhii.smortkin.utd@gmail.com the VERBATIM alert.
+  • «Notify Manager» — email the manager (MANAGER_EMAIL) the VERBATIM alert.
   • «Mark as Replied in Sheet» — set Status='Replied' + Date Replied on the row.
 
 Reuses email_common state (SHA256-hashed Message-IDs) so the SAME reply is never
@@ -39,28 +39,27 @@ import email_common as ec
 #   CONFIG
 # ═══════════════════════════════════════════════════════════════════
 
-SHEET_ID = os.environ.get(
-    "B2B_SHEET_ID", "1ggMS5Hko2jCY5eqcPvasBy3P6hAwbw8rldr4cS3Zeo4")
+SHEET_ID = os.environ.get("B2B_SHEET_ID", "")
 SHEET_TAB = os.environ.get("B2B_SHEET_TAB", "IT Companies — Emails")
 
-# «Match Replies to Contacts»: const MANAGER = 'serhii.smortkin.utd@gmail.com'
-MANAGER_EMAIL = os.environ.get("MANAGER_EMAIL", "serhii.smortkin.utd@gmail.com")
+# «Match Replies to Contacts»: const MANAGER = <manager email>
+MANAGER_EMAIL = os.environ.get("MANAGER_EMAIL", "")
 
 # «Build Gmail Search Query»: in:inbox newer_than:35d
 LOOKBACK_DAYS = int(os.environ.get("LOOKBACK_DAYS", "35"))
 
 # Our own outreach mailboxes — inbound to poll AND own-address loop guard.
-OWN_ADDRESSES = [
-    "sergey.utd@gmail.com",
-    "serge.utd@gmail.com",
-    "serhii.smortkin.utd@gmail.com",
-]
+OWN_ADDRESSES = [a for a in (
+    os.environ.get("UTD_MAIL_SERGEY", ""),
+    os.environ.get("UTD_MAIL_SERGE", ""),
+    os.environ.get("UTD_MAIL_SERHII", ""),
+) if a]
 
 # The physical mailboxes we poll for replies (both B2B outreach boxes).
-ACCOUNTS = [
-    {"user": "sergey.utd@gmail.com", "password": os.environ.get("GMAIL_APP_PW_SERGEY", "")},
-    {"user": "serge.utd@gmail.com",  "password": os.environ.get("GMAIL_APP_PW_SERGE", "")},
-]
+ACCOUNTS = [a for a in (
+    {"user": os.environ.get("UTD_MAIL_SERGEY", ""), "password": os.environ.get("GMAIL_APP_PW_SERGEY", "")},
+    {"user": os.environ.get("UTD_MAIL_SERGE", ""),  "password": os.environ.get("GMAIL_APP_PW_SERGE", "")},
+) if a["user"]]
 
 _STATE_DIR = os.environ.get("STATE_DIR", ".")
 STATE_FILE = os.path.join(_STATE_DIR, "reply_monitor_state.json")

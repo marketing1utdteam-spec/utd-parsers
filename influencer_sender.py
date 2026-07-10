@@ -36,13 +36,12 @@ import email_common as ec
 #   CONFIG
 # ═══════════════════════════════════════════════════════════════════
 
-SHEET_ID = os.environ.get(
-    "INFL_SHEET_ID", "12IiHIsdibJPRGYNyZfrvdmBDY9OjmsokdmL4GgWg4qQ")
+SHEET_ID = os.environ.get("INFL_SHEET_ID", "")
 SHEET_TAB = os.environ.get("INFL_SHEET_TAB", "Sheet1")
 
 # Outreach mailbox — "Sergey | UTD Web". app-password via the email_common
 # account convention (same env var as agency_autoresponder's Sergey mailbox).
-INFL_GMAIL_USER = os.environ.get("INFL_GMAIL_USER", "sergey.utd@gmail.com")
+INFL_GMAIL_USER = os.environ.get("INFL_GMAIL_USER", os.environ.get("UTD_MAIL_SERGEY", ""))
 ACCOUNT = {"user": INFL_GMAIL_USER, "password": os.environ.get("GMAIL_APP_PW_SERGEY", "")}
 
 DRY_RUN = os.environ.get("DRY_RUN", "true").strip().lower() in ("1", "true", "yes", "on")
