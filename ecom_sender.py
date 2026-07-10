@@ -148,6 +148,34 @@ def _names_with_links(csv_names, fallback_names):
         names = list(fallback_names)
     return ", ".join(_tref(n) if n in CATALOG else n for n in names)
 
+# ONE specialized preset per industry (theme, preset) — the preset IS the product
+# we sell first; names are the real Theme Store presets.
+PRESET_MAP = {
+    "Auto & Moto":            ("Victory", "Nitro"),
+    "Sports & Fitness":       ("Victory", "Athletica"),
+    "Food & Beverage":        ("Victory", "Roast"),
+    "Home & Furniture":       ("Gain", "Maison"),
+    "Jewelry & Accessories":  ("Allure", "Bijou"),
+    "Beauty & Cosmetics":     ("Allure", "Pristine"),
+    "Fashion & Apparel":      ("Allure", "Stitch"),
+    "Electronics & Tech":     ("Ultra", "Ultra"),
+    "Kids & Toys":            ("Impression", "Mimi"),
+    "Pets":                   ("Ultra", "Ultra"),
+    "Health & Supplements":   ("Victory", "Victory"),
+    "Art & Crafts":           ("Allure", "Carrara"),
+}
+
+
+def main_pick(industry):
+    """(theme, preset, preset_url) for this industry — the one product we sell."""
+    theme, preset = PRESET_MAP.get(industry) or (MAP.get(industry, ["Ultra"])[0],) * 2
+    if isinstance(theme, tuple):  # defensive
+        theme, preset = theme
+    t = CATALOG[theme]
+    url = t["link"] + "/presets/" + preset.lower()
+    return theme, preset, url
+
+
 MAP = {
     "Fashion & Apparel": ["Impression", "Boutique", "Gain", "Allure", "Victory"],
     "Jewelry & Accessories": ["Boutique", "Allure", "Gain", "Impression", "Ultra"],
@@ -236,26 +264,25 @@ BASE = ("You are Sergey, a normal guy who works at UTD Web, an IT company that "
         "never a detached stats paragraph. App costs are only the "
         "pays-for-itself argument, never the pain.\n"
         "\n"
-        "ONE MAIN THEME, AND THE RIGHT PRESET. Pick the single best-fit "
-        "theme and sell THAT one: name + link + 1-2 concrete features tied "
-        "to their store. Every theme ships 4 extra ready-made designs "
-        "(presets); when a preset clearly matches the merchant's niche by "
-        "its name and purpose (Roast for coffee, Athletica for sportswear, "
-        "Bijou or Aurum for jewelry, Maison for home goods, Sprout for "
-        "garden/eco, Nitro or Grip for auto and gear), point at that preset "
-        "with its demo link instead of the generic theme demo. Never invent "
-        "visual details of a preset; just say it is the ready-made design "
-        "aimed at that kind of store and give the link. Other themes get "
-        "ONE short line as alternatives, never equal billing.\n"
+        "ONE PRESET IS THE PRODUCT. The user message names THE preset we "
+        "sell to this store (each industry has its specialized ready-made "
+        "design). SELL THAT PRESET as the product: its name, its demo link, "
+        "the parent theme's price and 1-2 features tied to their store. "
+        "Say plainly this is the design made for stores like theirs and "
+        "the one you would install. The parent theme is mentioned once as "
+        "context ('the [Preset] design of our [Theme] theme'). Never sell "
+        "the bare theme when a preset is given, never name presets of "
+        "other themes, never invent visual details. Other themes get ONE "
+        "short line as alternatives at the end.\n"
         "\n"
         "ENDING (hard rule): finish with an EASY, harmless way to continue "
-        "the conversation. NEVER ask the merchant about their metrics, "
-        "speed, conversion or anything they will not know off-hand, and no "
-        "provocative questions. Good endings: offer to do something for "
-        "them ('want me to check your store's speed and send you the "
-        "numbers?', 'want me to point out which preset fits your catalog? "
-        "just reply'), or an easy preference question ('which of the two "
-        "looks closer to what you want?').\n"
+        "the conversation. NEVER ask the merchant about their metrics or "
+        "anything they will not know off-hand. NEVER offer to test their "
+        "site speed (if we have speed numbers, they are already in the "
+        "letter). Good endings: offer something concrete we will do for "
+        "them by email ('want me to send a short list of what would change "
+        "on your store with this design? just reply'), or an easy "
+        "preference question ('which look is closer to what you want?').\n"
         "\n"
         "FORMAT, mandatory for EVERY email including follow-up replies:\n"
         "- line 1: a greeting, 'Hi [store or person name] team,' or 'Hi "
@@ -370,6 +397,30 @@ def select_leads(rows):
 # ═══════════════════════════════════════════════════════════════════
 #   STORE-SITE FETCH  (n8n «Fetch Store Website» + strip in «Build …»)
 # ═══════════════════════════════════════════════════════════════════
+
+
+
+def measure_pagespeed(url):
+    """Real Google PageSpeed (mobile) for the store: (score/100, lcp_seconds).
+    Returns (None, None) on any failure — the letter then must NOT claim we
+    tested anything."""
+    if not requests or not url:
+        return None, None
+    try:
+        api = ("https://www.googleapis.com/pagespeedonline/v5/runPagespeed"
+               "?strategy=mobile&category=performance&url=" + url)
+        key = os.environ.get("PAGESPEED_API_KEY", "").strip()
+        if key:
+            api += "&key=" + key
+        r = requests.get(api, timeout=70)
+        d = r.json()
+        lh = d.get("lighthouseResult", {})
+        score = lh.get("categories", {}).get("performance", {}).get("score")
+        lcp = lh.get("audits", {}).get("largest-contentful-paint", {}).get("numericValue")
+        return (round(score * 100) if score is not None else None,
+                round(lcp / 1000.0, 1) if lcp else None)
+    except Exception:
+        return None, None
 
 def fetch_site_text(url):
     """Fetch the store homepage and reduce it to <=2000 chars of visible text.
@@ -541,12 +592,16 @@ def build_request(c, site_text, history=""):
                "3. US, one or two sentences: I'm Sergey from UTD Web, we make "
                "Shopify themes, they're on the official Theme Store (" +
                REGISTRY + ").\n"
-               "4. THE PITCH, 2-3 sentences: the ONE best theme (or its "
-               "best-matching preset) for this store, with link and price, "
-               "1-2 features tied to their store, and one short woven proof "
-               "clause from the EVIDENCE ARSENAL. Candidates:\n" +
-               "\n".join("- " + _tline(n) for n in primary) + "\n" +
-               _preset_lines(primary) + "\n"
+               "4. THE PITCH, 2-3 sentences: sell THE PRESET named in the "
+               "user message (the specialized design for their industry): "
+               "preset name + demo link + parent theme price, 1-2 features "
+               "tied to their store, one short woven proof clause from the "
+               "EVIDENCE ARSENAL. If the user message contains REAL "
+               "PageSpeed numbers for their site, state them plainly as "
+               "something we measured ('I ran your site through Google's "
+               "PageSpeed test: it scores X of 100 on mobile...') and tie "
+               "the pitch to them. If no numbers are given, do NOT claim "
+               "we tested anything.\n"
                "5. Value line, 1 sentence: upsells/cross-sells/promo blocks "
                "are built in, that usually replaces $15-50/month of apps, so "
                "it pays for itself.\n"
@@ -557,8 +612,24 @@ def build_request(c, site_text, history=""):
                "numbers).\n"
                "SUBJECT: natural and properly capitalized, naming their niche."
                "\nOutput:\nSUBJECT: [subject]\nBODY:\n[body]")
+        m_theme, m_preset, m_url = main_pick(c["industry"])
+        speed = ""
+        if c.get("psi_score") is not None:
+            speed = ("\nREAL PageSpeed numbers we measured for their site "
+                     "(state them in the letter): mobile performance score " +
+                     str(c["psi_score"]) + " of 100" +
+                     (", largest content loads in " + str(c["psi_lcp"]) + "s"
+                      if c.get("psi_lcp") else "") + ".")
         user = ("Store: " + store + "\nWebsite: " + c["website"] + "\nIndustry: " +
-                c["industry"] + "\n\nSite content:\n" + (site_text or "(unavailable)") +
+                c["industry"] +
+                "\nMAIN preset (the ONE product we sell them): " + m_preset +
+                " design of the " + m_theme + " theme (" + CATALOG[m_theme]["price"] +
+                "), demo: " + m_url +
+                "\nOther themes for the one-line alternatives mention: " +
+                ", ".join(_tref(n) for n in [t for t in MAP.get(c["industry"], list(CATALOG))
+                                             if t != m_theme][:2]) +
+                speed +
+                "\n\nSite content:\n" + (site_text or "(unavailable)") +
                 "\n\nWrite the email.")
     elif touch == 2:
         sys = (BASE +
@@ -569,16 +640,14 @@ def build_request(c, site_text, history=""):
                "The FIRST sentence after the greeting reminds them of the "
                "previous email in plain words ('I emailed you last week about "
                "themes for your store, one more thing worth knowing').\n"
-               "MAIN THEME LOCK (hard rule): the main theme of this email is "
-               "THE SAME theme we recommended in the first email (the first "
-               "name in 'Themes we suggested earlier'). Remind them of it by "
-               "name: 'Last week I recommended [Theme] for your store.' "
-               "NEVER switch the main recommendation to a different theme. "
-               "PRESET RULE: you may only mention presets from the exact "
-               "list given in the user message under 'Presets of the main "
-               "theme'. A preset belongs to ONE theme only; never attach a "
-               "preset name to a different theme, even if earlier emails "
-               "did. If no listed preset fits, mention no preset at all.\n"
+               "PRESET LOCK (hard rule): we sell ONE product to this store "
+               "across the whole sequence: the preset named in the user "
+               "message as 'MAIN preset'. Remind them of it by name: 'Last "
+               "week I recommended the [Preset] design for your store.' "
+               "Keep selling THAT preset with its demo link. NEVER switch "
+               "to another theme or preset, never attach the preset to a "
+               "different theme. If earlier emails named something else, "
+               "still sell the MAIN preset given now.\n"
                "Then ONE new point in 1-2 simple sentences: a fresh reason "
                "this theme fits their store, with one short proof clause "
                "from the EVIDENCE ARSENAL woven into the sentence.\n"
@@ -593,13 +662,12 @@ def build_request(c, site_text, history=""):
                "SUBJECT: short, natural, properly capitalized (the reply keeps "
                "the thread subject, but output one anyway)."
                "\nOutput:\nSUBJECT: [subject]\nBODY:\n[body]")
-        main_theme = next((n.strip() for n in (c.get("suggested") or "").split(",")
-                           if n.strip() in CATALOG), primary[0])
+        m_theme, m_preset, m_url = main_pick(c["industry"])
         user = ("Store: " + store + "\nIndustry: " + c["industry"] +
-                "\nThemes we suggested earlier: " + suggested_links +
-                "\nMAIN theme (keep selling this one): " + _tref(main_theme) +
-                "\nPresets of the main theme (the ONLY presets you may mention):\n" +
-                _preset_lines([main_theme]) +
+                "\nMAIN preset (the ONE product we sell them): " + m_preset +
+                " design of the " + m_theme + " theme (" + CATALOG[m_theme]["price"] +
+                "), demo: " + m_url +
+                "\nOther themes for a one-line alternatives mention: " + suggested_links +
                 "\n\nPrevious emails in this thread:\n" + (history or "(unavailable)") +
                 "\n\nWrite the follow-up. It must build on the thread above "
                 "without repeating it.")
@@ -611,11 +679,10 @@ def build_request(c, site_text, history=""):
                "Start with the greeting line, it is mandatory even in a reply. "
                "The FIRST sentence after the greeting must remind them that you "
                "wrote earlier about themes for their store. Calm, never pushy.\n"
-               "MAIN THEME LOCK (hard rule): keep selling THE SAME theme "
-               "from the earlier emails (the first name in the suggested "
-               "list); remind them of it by name. Never switch the main "
-               "recommendation. PRESET RULE: only presets from the list in "
-               "the user message; a preset belongs to one theme only.\n"
+               "PRESET LOCK (hard rule): keep selling the ONE preset named "
+               "in the user message as 'MAIN preset'; remind them of it by "
+               "name with its demo link. Never switch to another theme or "
+               "preset.\n"
                "The angle of this email is money, said simply: the theme "
                "already includes what stores usually pay apps for (upsells, "
                "cross-sells, promo blocks, $15-50/month each), and it is a "
@@ -630,13 +697,12 @@ def build_request(c, site_text, history=""):
                "Total body 60-110 words.\n"
                "SUBJECT: short, natural, properly capitalized."
                "\nOutput:\nSUBJECT: [subject]\nBODY:\n[body]")
-        main_theme = next((n.strip() for n in (c.get("suggested") or "").split(",")
-                           if n.strip() in CATALOG), primary[0])
-        user = ("Store: " + store + "\nIndustry: " + c["industry"] + "\nTop themes: " +
-                suggested_links +
-                "\nMAIN theme (keep selling this one): " + _tref(main_theme) +
-                "\nPresets of the main theme (the ONLY presets you may mention):\n" +
-                _preset_lines([main_theme]) +
+        m_theme, m_preset, m_url = main_pick(c["industry"])
+        user = ("Store: " + store + "\nIndustry: " + c["industry"] +
+                "\nMAIN preset (the ONE product we sell them): " + m_preset +
+                " design of the " + m_theme + " theme (" + CATALOG[m_theme]["price"] +
+                "), demo: " + m_url +
+                "\nOther themes for a one-line alternatives mention: " + suggested_links +
                 "\n\nPrevious emails in this thread:\n" + (history or "(unavailable)") +
                 "\n\nWrite the value follow-up. It must add something new versus "
                 "the thread above.")
@@ -669,6 +735,28 @@ def build_request(c, site_text, history=""):
 # ═══════════════════════════════════════════════════════════════════
 #   PARSE EMAIL  (verbatim SUBJECT/BODY parse + fallback templates)
 # ═══════════════════════════════════════════════════════════════════
+
+ALL_PRESET_NAMES = {pr: th for th, t in CATALOG.items() for pr in t.get("presets", [])}
+
+
+def validate_body(c, body):
+    """Code-level guard (not a prompt): every link must be one of ours, and any
+    preset named in the body must belong to the industry's main theme. Returns
+    an error string or None."""
+    m_theme, m_preset, m_url = main_pick(c["industry"])
+    allowed = {REGISTRY, SITE} | {t["link"] for t in CATALOG.values()} | {
+        t["link"] + "/presets/" + pr.lower()
+        for th, t in CATALOG.items() for pr in t.get("presets", [])}
+    for link in re.findall(r"https?://[^\s)>\]]+", body):
+        if link.rstrip('.,;:') not in allowed:
+            return "disallowed link: " + link
+    for pr, th in ALL_PRESET_NAMES.items():
+        if re.search(r"\b" + re.escape(pr) + r"\b", body) and pr.lower() != th.lower():
+            # preset named: its theme must be the main theme AND it must be the main preset
+            if th != m_theme or pr != m_preset:
+                return "wrong preset mentioned: %s (belongs to %s; main=%s/%s)" % (pr, th, m_theme, m_preset)
+    return None
+
 
 def parse_email(c, ai_text, primary, alt):
     """Parse Claude's SUBJECT/BODY output; fall back to the hard-coded per-touch
@@ -736,6 +824,13 @@ def parse_email(c, ai_text, primary, alt):
     if not re.match(r"^\s*(hi|hello|hey|dear|good\s(morning|afternoon|evening))\b",
                     body, re.I):
         body = "Hi there,\n\n" + body
+
+    # Code-level link/preset guard: a letter with a foreign link, a preset of
+    # the wrong theme, or the wrong preset NEVER goes out. AI draft -> fallback.
+    err = validate_body(c, body)
+    if err and ai_text:
+        print("  [GUARD] AI draft rejected (" + err + ") -> safe fallback template")
+        return parse_email(c, "", primary, alt)
 
     body += SIGNATURE
     next_status = ("Sent" if c["touch"] == 1 else
@@ -894,6 +989,12 @@ def run_once():
         selected += 1
 
         site_text = fetch_site_text(c["website"]) if c["touch"] == 1 else ""
+        if c["touch"] == 1:
+            c["psi_score"], c["psi_lcp"] = measure_pagespeed(c["website"])
+            if c["psi_score"] is not None:
+                print(f"  [PSI] mobile score={c['psi_score']}/100 lcp={c.get('psi_lcp')}s")
+            else:
+                print("  [PSI] unavailable -> letter must not claim we tested")
         # Touches 2-4: pull the ACTUAL prior correspondence (or a structured
         # summary) so the letter builds on what was already said.
         history = build_thread_context(c) if c["touch"] > 1 else ""
