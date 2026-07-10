@@ -57,7 +57,7 @@ SHEET_TAB = os.environ.get("B2B_SHEET_TAB", "IT Companies — Emails")
 # autoresponder's primary mailbox (email_common account convention).
 ACCOUNT = {
     "user": os.environ.get("B2B_SENDER_USER", os.environ.get("UTD_MAIL_SERGEY", "")),
-    "password": os.environ.get("GMAIL_APP_PW_SERGEY", ""),
+    "password": os.environ.get("SENDER_APP_PW") or os.environ.get("GMAIL_APP_PW_SERGEY", ""),
 }
 SENDER_NAME = "Sergey | UTD Web"  # n8n Gmail senderName (see assumptions)
 

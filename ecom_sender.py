@@ -58,7 +58,7 @@ SHEET_TAB = os.environ.get("ECOM_SHEET_TAB", "Contacts")
 # {"user","password"} with the Gmail app-password pulled from env by name).
 ACCOUNT = {
     "user": os.environ.get("ECOM_SENDER_EMAIL", os.environ.get("UTD_MAIL_SERGEY", "")),
-    "password": os.environ.get("GMAIL_APP_PW_SERGEY", ""),
+    "password": os.environ.get("SENDER_APP_PW") or os.environ.get("GMAIL_APP_PW_SERGEY", ""),
 }
 # Gmail "From" display name used by the n8n Gmail node (senderName).
 SENDER_NAME = "Sergey | UTD Web"

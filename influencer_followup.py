@@ -46,7 +46,7 @@ SHEET_ID = os.environ.get("INFL_SHEET_ID", "")
 SHEET_TAB = os.environ.get("INFL_SHEET_TAB", "Sheet1")
 
 INFL_GMAIL_USER = os.environ.get("INFL_GMAIL_USER", os.environ.get("UTD_MAIL_SERGEY", ""))
-ACCOUNT = {"user": INFL_GMAIL_USER, "password": os.environ.get("GMAIL_APP_PW_SERGEY", "")}
+ACCOUNT = {"user": INFL_GMAIL_USER, "password": os.environ.get("SENDER_APP_PW") or os.environ.get("GMAIL_APP_PW_SERGEY", "")}
 
 DRY_RUN = os.environ.get("DRY_RUN", "true").strip().lower() in ("1", "true", "yes", "on")
 
