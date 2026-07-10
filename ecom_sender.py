@@ -574,8 +574,11 @@ def build_request(c, site_text, history=""):
                "name in 'Themes we suggested earlier'). Remind them of it by "
                "name: 'Last week I recommended [Theme] for your store.' "
                "NEVER switch the main recommendation to a different theme. "
-               "If you mention a preset, it must be a preset OF THAT SAME "
-               "theme.\n"
+               "PRESET RULE: you may only mention presets from the exact "
+               "list given in the user message under 'Presets of the main "
+               "theme'. A preset belongs to ONE theme only; never attach a "
+               "preset name to a different theme, even if earlier emails "
+               "did. If no listed preset fits, mention no preset at all.\n"
                "Then ONE new point in 1-2 simple sentences: a fresh reason "
                "this theme fits their store, with one short proof clause "
                "from the EVIDENCE ARSENAL woven into the sentence.\n"
@@ -590,8 +593,13 @@ def build_request(c, site_text, history=""):
                "SUBJECT: short, natural, properly capitalized (the reply keeps "
                "the thread subject, but output one anyway)."
                "\nOutput:\nSUBJECT: [subject]\nBODY:\n[body]")
+        main_theme = next((n.strip() for n in (c.get("suggested") or "").split(",")
+                           if n.strip() in CATALOG), primary[0])
         user = ("Store: " + store + "\nIndustry: " + c["industry"] +
                 "\nThemes we suggested earlier: " + suggested_links +
+                "\nMAIN theme (keep selling this one): " + _tref(main_theme) +
+                "\nPresets of the main theme (the ONLY presets you may mention):\n" +
+                _preset_lines([main_theme]) +
                 "\n\nPrevious emails in this thread:\n" + (history or "(unavailable)") +
                 "\n\nWrite the follow-up. It must build on the thread above "
                 "without repeating it.")
@@ -606,7 +614,8 @@ def build_request(c, site_text, history=""):
                "MAIN THEME LOCK (hard rule): keep selling THE SAME theme "
                "from the earlier emails (the first name in the suggested "
                "list); remind them of it by name. Never switch the main "
-               "recommendation.\n"
+               "recommendation. PRESET RULE: only presets from the list in "
+               "the user message; a preset belongs to one theme only.\n"
                "The angle of this email is money, said simply: the theme "
                "already includes what stores usually pay apps for (upsells, "
                "cross-sells, promo blocks, $15-50/month each), and it is a "
@@ -621,8 +630,13 @@ def build_request(c, site_text, history=""):
                "Total body 60-110 words.\n"
                "SUBJECT: short, natural, properly capitalized."
                "\nOutput:\nSUBJECT: [subject]\nBODY:\n[body]")
+        main_theme = next((n.strip() for n in (c.get("suggested") or "").split(",")
+                           if n.strip() in CATALOG), primary[0])
         user = ("Store: " + store + "\nIndustry: " + c["industry"] + "\nTop themes: " +
                 suggested_links +
+                "\nMAIN theme (keep selling this one): " + _tref(main_theme) +
+                "\nPresets of the main theme (the ONLY presets you may mention):\n" +
+                _preset_lines([main_theme]) +
                 "\n\nPrevious emails in this thread:\n" + (history or "(unavailable)") +
                 "\n\nWrite the value follow-up. It must add something new versus "
                 "the thread above.")
