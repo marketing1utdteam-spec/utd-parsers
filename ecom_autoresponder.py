@@ -1,0 +1,436 @@
+#!/usr/bin/env python3
+"""
+ecom_autoresponder.py — UTD eCommerce (Shopify store owner) inbound autoresponder.
+
+Faithful port of the n8n workflow «ECOM_auto» (ak23YgaINtgxkbjM) to plain Python
+for GitHub Actions. Reads one or more Gmail mailboxes over IMAP, classifies each
+new inbound reply to our UTD-themes cold outreach, drives the store-owner funnel
+with Claude, and replies in-thread over SMTP (Gmail app-passwords).
+
+n8n flow reproduced (node → step):
+  «Входящие»(getAll) → «Разбор»(classify) → «Ecom Contacts»(read CRM) →
+  «Обогащение»(match CRM, skip non-CRM humans, dedup on Last Msg ID) →
+  «Нужен AI?»(if preCategory empty) → «Собрать запрос»/«Claude»/«Итог AI»
+    (AI branch) OR «Без AI» (bounce/send_failed/auto_reply branch) →
+  «Слияние» → «Маршрут»(switch) → per-route: reply + sheet status + mark read.
+
+Route → CRM Status (VERBATIM from the n8n sheet nodes):
+  respond      → "Replied"      (send reply, write Status + Date Replied)
+  decline      → "Declined"     (write Status + Date Replied)
+  bounce       → "Bounced"      (write Status + Date Replied)
+  send_failed  → "Send Failed"  (write Status + Date Replied)
+  escalate     → (no write)     (n8n «Эскалация: непрочитано» — leave for a human)
+  spam/ignore  → (no write)     (n8n «Прочитано: игнор» — just mark handled)
+  auto_reply   → (no write)     (routes to the ignore output in the n8n switch)
+
+Safety / GHA specifics:
+  • DRY_RUN=true (default) prints drafts + intended sheet writes; nothing is sent.
+  • Processed Message-IDs are SHA256-hashed into <STATE_DIR>/ecom_autoresponder_state.json
+    (repo is PUBLIC — no raw emails/addresses committed). This replaces the n8n
+    markAsRead trick as the dedup mechanism.
+
+Usage:  python ecom_autoresponder.py
+Env:    GMAIL_APP_PW_SERGEY, GMAIL_APP_PW_SERGI, GMAIL_APP_PW_SERGE,
+        ANTHROPIC_API_KEY, GOOGLE_CREDENTIALS_JSON,
+        ECOM_SHEET_ID, ECOM_SHEET_TAB, DRY_RUN, LOOKBACK_DAYS, STATE_DIR
+"""
+
+import os
+import re
+import time
+import json
+from datetime import datetime, timezone
+
+import email_common as ec
+
+
+# ═══════════════════════════════════════════════════════════════════
+#   CONFIG
+# ═══════════════════════════════════════════════════════════════════
+
+# Env var names match ecom_harvester.py (ECOM_SHEET_ID / ECOM_SHEET_TAB).
+# Defaults mirror the n8n «ECOM_auto» workflow (spreadsheet id + "Ecom Contacts"
+# tab), which is the sheet this autoresponder actually operates on.
+SHEET_ID = os.environ.get(
+    "ECOM_SHEET_ID", "1ggMS5Hko2jCY5eqcPvasBy3P6hAwbw8rldr4cS3Zeo4").strip()
+SHEET_TAB = os.environ.get("ECOM_SHEET_TAB", "Ecom Contacts")
+
+# Our own mailbox addresses — inbound from these is a loop, not a prospect.
+# (VERBATIM from the n8n «Разбор» OWN list.)
+OWN_ADDRESSES = [
+    "sergey.utd@gmail.com",
+    "sergi.utd@gmail.com",
+    "serge.utd@gmail.com",
+    "serhii.smortkin.utd@gmail.com",
+]
+
+# Mailboxes to process. Skipped automatically when no app-password is set.
+ACCOUNTS = [
+    {"user": "sergey.utd@gmail.com", "password": os.environ.get("GMAIL_APP_PW_SERGEY", "")},
+    {"user": "sergi.utd@gmail.com",  "password": os.environ.get("GMAIL_APP_PW_SERGI", "")},
+    {"user": "serge.utd@gmail.com",  "password": os.environ.get("GMAIL_APP_PW_SERGE", "")},
+]
+
+_STATE_DIR = os.environ.get("STATE_DIR", ".")
+STATE_FILE = os.path.join(_STATE_DIR, "ecom_autoresponder_state.json")
+
+DRY_RUN = os.environ.get("DRY_RUN", "true").strip().lower() in ("1", "true", "yes", "on")
+# Scan the WHOLE inbox over a wide window (not just unread) — dedup is by hashed
+# Message-ID in state, so already-read replies we missed before are still caught.
+LOOKBACK_DAYS = int(os.environ.get("LOOKBACK_DAYS", "60"))
+
+# CRM columns the sheet is expected to carry (for reference / matching).
+EXPECTED_COLUMNS = [
+    "Email", "Thread ID", "Store Name", "Industry",
+    "Suggested Themes", "Last Msg ID", "Status", "Date Replied",
+]
+
+# Switch order from the n8n «Маршрут» node. A category not in this list falls
+# through to the "ignore" output (mark handled, no reply, no sheet write) — this
+# is exactly what happens to 'auto_reply' and 'ignore' (spam) in the workflow.
+ROUTE_OUTPUTS = ["respond", "escalate", "decline", "bounce", "send_failed"]
+
+# ── In-run caches (populated once per run; NO per-email Sheets calls) ──
+_SHEET = {"ws": None, "header": [], "email_to_row": {}}
+_PENDING = {}
+
+
+# ═══════════════════════════════════════════════════════════════════
+#   PROMPTS  (VERBATIM from the n8n «Собрать запрос» node)
+# ═══════════════════════════════════════════════════════════════════
+
+MODEL = "claude-sonnet-5"
+MAX_TOKENS = 1000
+
+SYSTEM_PROMPT = (
+"You are Sergey from UTD Web replying to a Shopify store owner who answered our cold email about UTD themes. UTD themes (official Shopify Theme Store, developer UTD Web, links https://themes.shopify.com/themes?q=UTD and https://utdweb.team/shopify-themes): 6 theme families, 30 presets. Impression $340 (premium flagship, EU translations, cross-sell, mega menu, size chart, pre-order). Victory $320 (sports/events/active: store locator, event calendar, age verifier, countdowns). Boutique $160 (boutiques/premium brands). Ultra $100 (tech/furniture/auto/toys). Allure $100 (beauty/lifestyle). Gain $100 (minimalist). All themes: built-in upsells, cross-sells, promo sections (reduce need for paid apps); EU translations; preview before publish; products stay in place when switching. Themes are bought on the official Shopify Theme Store; UTD can help with setup and customization on request.\n\n"
+"Answer their questions accurately using ONLY these facts, and gently move them toward trying one theme that fits their store (use the themes we already suggested if provided). Do not invent features, prices or promises. Do not offer discounts. If they ask about custom development, a call at a specific time, contracts, or anything not covered here, do NOT answer, mark escalate.\n\n"
+"Return STRICT JSON: {\"category\":\"interested|question|decline|spam|escalate\",\"note\":\"<short RU>\",\"reply_body\":\"<reply or empty>\"}\n"
+"- interested/question: write the reply. Under 150 words, English, human, no em dashes, no hype. Recommend a specific theme with one concrete reason. End with:\n"
+"Best regards,\n"
+"Sergey\n"
+"UTD Web | utdweb.team\n"
+"- decline/spam: reply_body empty.\n"
+"- escalate: reply_body empty.\n"
+"Output ONLY the JSON."
+)
+
+
+def build_user_prompt(msg, store, industry, suggested):
+    """VERBATIM from «Собрать запрос»: the user message fed to Claude."""
+    return (
+        "Incoming reply:\n"
+        "From: " + msg["from"] + "\n"
+        "Store: " + (store or "?") + "\n"
+        "Industry: " + (industry or "?") + "\n"
+        "Themes we suggested: " + (suggested or "?") + "\n\n"
+        "Body:\n" + msg["body"] + "\n\n"
+        "Classify and reply. Output ONLY JSON."
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════
+#   AI / non-AI result parsing  (ported from «Итог AI» and «Без AI»)
+# ═══════════════════════════════════════════════════════════════════
+
+def parse_ai_result(text):
+    """Parse Claude's strict-JSON output into a routing decision.
+
+    Faithful to the n8n «Итог AI» node: on any parse failure (missing/invalid
+    JSON, or an empty API response) the category DEFAULTS to 'escalate' — the
+    workflow never leaves a message undecided, it hands it to a human.
+    """
+    cat, reply, note = "escalate", "", "AI не разобрал"
+    try:
+        m = re.search(r"\{[\s\S]*\}", text or "")
+        p = json.loads(m.group(0))
+        if p.get("category") in ("interested", "question", "decline", "spam", "escalate"):
+            cat = p["category"]
+        reply = (p.get("reply_body") or "").strip()
+        note = (p.get("note") or "").strip() or note
+    except Exception:
+        pass
+
+    # interested/question with no drafted reply → escalate to a human
+    if cat in ("interested", "question") and not reply:
+        cat = "escalate"
+
+    route = "respond" if cat in ("interested", "question") else (
+        "ignore" if cat == "spam" else cat)
+    status = "Replied" if route == "respond" else (
+        "Declined" if cat == "decline" else (
+            "Escalated" if cat == "escalate" else ""))
+    return {"category": route, "ai_category": cat, "note": note,
+            "reply_body": reply, "new_status": status}
+
+
+def non_ai_result(pre_category):
+    """Map a classifier pre-category to a route (ported from «Без AI»)."""
+    mapping = {"bounce": "bounce", "send_failed": "send_failed", "auto_reply": "auto_reply"}
+    route = mapping.get(pre_category, "ignore")
+    status = {"bounce": "Bounced", "send_failed": "Send Failed",
+              "auto_reply": "Auto Reply"}.get(pre_category, "")
+    return {"category": route, "ai_category": pre_category, "note": "",
+            "reply_body": "", "new_status": status}
+
+
+# ═══════════════════════════════════════════════════════════════════
+#   CRM matching  (ported from «Обогащение»)
+# ═══════════════════════════════════════════════════════════════════
+
+def build_index(rows):
+    """Index CRM rows by Email and by Thread ID (Gmail thread id)."""
+    by_email, by_thread = {}, {}
+    for r in rows:
+        info = {
+            "email": str(r.get("Email", "")).strip().lower(),
+            "store": str(r.get("Store Name", "")).strip(),
+            "industry": str(r.get("Industry", "")).strip(),
+            "suggested": str(r.get("Suggested Themes", "")).strip(),
+            "last": str(r.get("Last Msg ID", "")).strip(),
+            "thread": str(r.get("Thread ID", "")).strip(),
+            "status": str(r.get("Status", "")).strip(),
+        }
+        if info["email"]:
+            by_email[info["email"]] = info
+        if info["thread"]:
+            by_thread[info["thread"]] = info
+    return by_email, by_thread
+
+
+def match_contact(msg, by_email, by_thread):
+    """Match an inbound message to a CRM row: Thread ID first, then sender email
+    (VERBATIM ordering from «Обогащение»: byThread[threadId] || byEmail[email])."""
+    thrid = str(msg.get("gm_thrid", "")).strip()
+    if thrid and thrid in by_thread:
+        return by_thread[thrid]
+    return by_email.get(msg.get("from_email", ""), None)
+
+
+# ═══════════════════════════════════════════════════════════════════
+#   Actions (send + sheet), guarded by DRY_RUN
+# ═══════════════════════════════════════════════════════════════════
+
+def _reply_subject(subject):
+    s = subject or ""
+    return s if s.lower().startswith("re:") else "Re: " + s
+
+
+def _print_draft(kind, account, to, subject, body):
+    print("\n" + "=" * 70)
+    print(f"[DRAFT · {kind}]  DRY_RUN — not sent")
+    print(f"  from   : {account['user']}")
+    print(f"  to     : {to}")
+    print(f"  subject: {subject}")
+    print("  body:")
+    for line in (body or "").splitlines():
+        print("    " + line)
+    print("=" * 70)
+
+
+def do_reply(account, msg, decision):
+    """Send the funnel reply in-thread (n8n «Автоответ» gmail reply node)."""
+    subject = _reply_subject(msg["subject"])
+    if DRY_RUN:
+        _print_draft("reply", account, msg["from_email"], subject,
+                     decision["reply_body"])
+        return
+    ec.send_email(account, msg["from_email"], subject, decision["reply_body"],
+                  in_reply_to=msg["message_id"], references=msg["references"])
+
+
+def enqueue_update(email, updates):
+    """Queue a per-column update for a contact (merged by email; last write wins).
+    NOTHING hits the Sheets API here — everything is flushed once at run end."""
+    if not email or not updates:
+        return
+    key = str(email).strip().lower()
+    row = _SHEET["email_to_row"].get(key)
+    if not row:
+        # Contact is not in the CRM sheet — nothing to update (we never add rows).
+        print(f"  [SHEET] {key} not found in CRM → skipped (no row to update)")
+        return
+    bucket = _PENDING.setdefault(key, {})
+    for col, val in updates.items():
+        if col in _SHEET["header"]:
+            bucket[col] = val
+
+
+def write_status(email, status):
+    """Queue Status + Date Replied for a contact matched by Email (VERBATIM the
+    columns written by every status node in the n8n workflow)."""
+    if not status or not email:
+        return
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    enqueue_update(email, {"Status": status, "Date Replied": now})
+    print(f"  [SHEET] queued Status='{status}' for {email}")
+
+
+def flush_updates():
+    """Write ALL queued contact updates in a SINGLE Sheets batchUpdate call."""
+    if not _PENDING:
+        print("\n[SHEET] no updates to flush.")
+        return
+    header = _SHEET["header"]
+    cell_updates = []
+    for email, cols in _PENDING.items():
+        row = _SHEET["email_to_row"].get(email)
+        if not row:
+            continue
+        for col, val in cols.items():
+            if col not in header:
+                continue
+            a1 = ec.gspread_a1(row, header.index(col) + 1)
+            cell_updates.append({"range": a1, "values": [[val]]})
+    if DRY_RUN:
+        print(f"\n[SHEET] DRY_RUN — would batch-write {len(cell_updates)} cells "
+              f"across {len(_PENDING)} contacts in ONE call:")
+        for email, cols in _PENDING.items():
+            print(f"    {email}: {cols}")
+        return
+    if not _SHEET["ws"]:
+        print("\n[SHEET] no worksheet handle — cannot flush.")
+        return
+    try:
+        n = ec.batch_update_cells(_SHEET["ws"], cell_updates)
+        print(f"\n[SHEET] batch-wrote {n} cells across {len(_PENDING)} contacts in ONE call.")
+    except Exception as e:
+        print(f"\n⚠️  [SHEET] batch update failed after retries: {e}")
+
+
+# ═══════════════════════════════════════════════════════════════════
+#   Per-message processing
+# ═══════════════════════════════════════════════════════════════════
+
+def process_message(account, msg, by_email, by_thread, state, stats):
+    mid = msg.get("message_id", "")
+
+    # Dedup: already processed in a previous run (hashed Message-ID)?
+    if ec.is_processed(state, mid):
+        return
+
+    contact = match_contact(msg, by_email, by_thread)
+    pre = ec.classify_incoming(msg, OWN_ADDRESSES)
+
+    # «Обогащение» rule: not in the eCom base AND a plain human reply → ignore
+    # entirely (never spend an AI call on strangers who are not in the CRM).
+    if pre == "human" and contact is None:
+        return
+
+    # «Обогащение» dedup: this exact message is the last one we already acted on.
+    if contact and contact.get("last") and contact["last"] == mid:
+        if not DRY_RUN:
+            ec.mark_processed(state, mid)
+        return
+
+    if pre != "human":
+        decision = non_ai_result(pre)
+    else:
+        store = contact["store"] if contact else ""
+        industry = contact["industry"] if contact else ""
+        suggested = contact["suggested"] if contact else ""
+        user = build_user_prompt(msg, store, industry, suggested)
+        # Gentle pacing between Claude calls to avoid 429 on big batches.
+        time.sleep(0.7)
+        ai_text = ec.call_claude(SYSTEM_PROMPT, user, model=MODEL, max_tokens=MAX_TOKENS)
+        decision = parse_ai_result(ai_text)
+
+    # «Маршрут» switch: a category not in ROUTE_OUTPUTS falls to the ignore output.
+    route = decision["category"] if decision["category"] in ROUTE_OUTPUTS else "ignore"
+    stats[route] = stats.get(route, 0) + 1
+    print(f"\n· {account['user']} ← {msg['from_email']} | {msg['subject'][:60]!r}")
+    print(f"  route={route} status→{decision['new_status'] or '-'} | {decision['note']}")
+
+    if route == "respond":
+        do_reply(account, msg, decision)
+        target = (contact.get("email") if contact else "") or msg["from_email"]
+        # «Статус: диалог»: Status = new_status || 'Replied'
+        write_status(target, decision["new_status"] or "Replied")
+    elif route == "decline":
+        target = (contact.get("email") if contact else "") or msg["from_email"]
+        write_status(target, "Declined")
+    elif route in ("bounce", "send_failed"):
+        # The DSN comes FROM mailer-daemon, not the contact. Pull the real failed
+        # recipient out of the bounce body/headers and flag THAT contact.
+        rcpt = ec.extract_failed_recipient(msg, OWN_ADDRESSES)
+        if rcpt:
+            print(f"  failed recipient = {rcpt} → Status '{decision['new_status']}'")
+            write_status(rcpt, decision["new_status"])
+        else:
+            print("  failed recipient not found → sheet left untouched.")
+    elif route == "escalate":
+        # n8n «Эскалация: непрочитано»: no reply, no sheet write. We DO mark it
+        # processed so it is not re-escalated every run (decision was made).
+        print("  ESCALATE → left for a human (no reply, no sheet write).")
+    # 'ignore' (spam / auto_reply) → mark handled, nothing else.
+
+    if not DRY_RUN:
+        ec.mark_processed(state, mid)
+
+
+# ═══════════════════════════════════════════════════════════════════
+#   MAIN
+# ═══════════════════════════════════════════════════════════════════
+
+def run_once():
+    print(f"=== UTD eCom autoresponder | DRY_RUN={DRY_RUN} | "
+          f"lookback {LOOKBACK_DAYS}d | {datetime.now(timezone.utc).isoformat()} ===")
+    state = ec.load_state(STATE_FILE)
+
+    # Reset in-run caches / pending writes.
+    _PENDING.clear()
+    _SHEET["ws"] = None
+    _SHEET["header"] = []
+    _SHEET["email_to_row"] = {}
+
+    # CRM snapshot: open the worksheet ONCE and read ONCE (with 429 backoff).
+    rows = []
+    try:
+        ws = ec.open_worksheet(SHEET_ID, SHEET_TAB)
+        rows = ec.read_rows_ws(ws)
+        _SHEET["ws"] = ws
+        _SHEET["header"] = list(rows[0].keys()) if rows else ws.row_values(1)
+        e2r = {}
+        for i, r in enumerate(rows, start=2):
+            em = str(r.get("Email", "")).strip().lower()
+            if em and em not in e2r:
+                e2r[em] = i
+        _SHEET["email_to_row"] = e2r
+    except Exception as e:
+        print(f"⚠️  Could not read CRM sheet: {e}")
+
+    by_email, by_thread = build_index(rows)
+    print(f"CRM: {len(rows)} rows read in 1 call, {len(by_email)} emails indexed, "
+          f"{len(by_thread)} threads indexed, {len(_SHEET['email_to_row'])} rows mapped.")
+
+    stats = {}
+    for account in ACCOUNTS:
+        if not account["password"]:
+            print(f"⚠️  No app-password for {account['user']} — skipping mailbox.")
+            continue
+        try:
+            # Scan the WHOLE inbox (read + unread) over the lookback window.
+            msgs = ec.fetch_inbox(account, since_days=LOOKBACK_DAYS, unseen_only=False)
+        except Exception as e:
+            print(f"⚠️  IMAP error for {account['user']}: {e}")
+            continue
+        print(f"\n>>> {account['user']}: {len(msgs)} messages in last {LOOKBACK_DAYS}d")
+        for msg in msgs:
+            try:
+                process_message(account, msg, by_email, by_thread, state, stats)
+            except Exception as e:
+                print(f"  !! error on message {msg.get('message_id','?')}: {e}")
+
+    # Flush ALL queued CRM updates in a single Sheets batchUpdate call.
+    flush_updates()
+
+    if not DRY_RUN:
+        ec.save_state(STATE_FILE, state)
+    print(f"\n=== done. routes: {stats} ===")
+    return {"parser": "ecom_autoresponder", "routes": stats,
+            "dry_run": DRY_RUN, "sheet_writes_queued": len(_PENDING)}
+
+
+if __name__ == "__main__":
+    import json
+    print("SUMMARY:", json.dumps(run_once(), ensure_ascii=False))
