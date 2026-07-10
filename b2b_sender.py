@@ -126,6 +126,17 @@ def pick_next_uncontacted(rows):
     rows: list of (row_number, record_dict). Returns a contact dict
     {row_number, email, company_name, website} or None when nothing qualifies.
     """
+    # Owner override: a row with Status='NEXT' is sent FIRST, bypassing the
+    # validity blocklists (deliberate manual insert, e.g. an internal test).
+    for row_number, r in rows:
+        if str(r.get("Status", "")).strip() == "NEXT" and "@" in str(r.get("Email", "")):
+            website = str(r.get("Website", "")).strip()
+            return {
+                "row_number": row_number,
+                "email": str(r.get("Email", "")).strip(),
+                "company_name": clean_company_name(str(r.get("Company Name", "") or r.get("Company", ""))),
+                "website": website if website.startswith("http") else "https://" + website,
+            }
     candidates = []
     for row_number, r in rows:
         s = str(r.get("Status", "")).strip()

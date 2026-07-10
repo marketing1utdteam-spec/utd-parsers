@@ -424,6 +424,25 @@ def select_leads(rows):
     (if any is due) else all touch-1 leads.
     """
     elig = []
+    # Owner override: rows with Status='NEXT' are sent FIRST as touch 1,
+    # bypassing the blocklists (deliberate manual insert, e.g. internal test).
+    for i, r in enumerate(rows, start=2):
+        if str(r.get("Status", "")).strip() == "NEXT" and "@" in str(r.get("Email", "")):
+            website = str(r.get("Website", "")).strip()
+            url = website if website.startswith("http") else "https://" + website
+            return [{
+                "found": True, "touch": 1,
+                "email": str(r.get("Email", "")).strip(),
+                "store_name": str(r.get("Store Name", "")).strip(),
+                "website": url,
+                "industry": str(r.get("Industry", "Other")).strip() or "Other",
+                "current_theme": str(r.get("Current Theme", "")).strip(),
+                "suggested": str(r.get("Suggested Themes", "")).strip(),
+                "thread_id": str(r.get("Thread ID", "")).strip(),
+                "last_msg": str(r.get("Last Msg ID", "")).strip(),
+                "status": "", "date_sent": "",
+                "row_number": i,
+            }]
     for i, r in enumerate(rows, start=2):  # sheet row (header is row 1)
         st = str(r.get("Status", "")).strip()
         email = str(r.get("Email", "")).strip()
