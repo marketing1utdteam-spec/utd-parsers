@@ -4,7 +4,7 @@ b2b_followup.py — UTD "Referral program" B2B follow-up sender (Claude-first).
 
 Evolution of the n8n workflow B2B_followup (HhCE6aXjSRhUJX27) for GitHub
 Actions. Once a day it finds contacts that were emailed ("Sent") more than
-7 days ago and never replied, asks Claude to write a SHORT personalized
+7 days ago and never replied, asks Claude to write a calm personalized
 follow-up (grounded in a fresh site scrape + the actual prior correspondence
 pulled over IMAP when available), sends it IN-THREAD when the row has a
 Thread ID, and marks the row "Follow-up Sent".
@@ -17,9 +17,10 @@ Pipeline per contact:
                                     prior thread via ec.fetch_thread (IMAP,
                                     Message-ID → X-GM-THRID resolve) or a
                                     faithful summary when IMAP is unavailable
-  Claude — Write Follow-Up        → ec.call_claude (claude-sonnet-5, 700 tok)
-                                    canon: under 120 words, hook first, ONE new
-                                    angle, no em dashes, no hype, clear ask
+  Claude — Write Follow-Up        → ec.call_claude (claude-sonnet-5, 1000 tok)
+                                    canon: plain human voice, explicit reminder
+                                    of the first email, ONE new angle, no em
+                                    dashes, no hype, simple reply-inviting ask
   Fallback                        → static template body when Claude fails
   Send Follow-Up Email            → ec.send_email (in-thread reply when the
                                     row has a Thread ID, else "Re: <subject>")
@@ -44,7 +45,8 @@ from datetime import datetime, timezone, timedelta
 import email_common as ec
 from b2b_sender import (fetch_company_website, _clean_site_text,
                         print_prompt_for_review, strip_em_dashes,
-                        strip_trailing_signoff, clean_company_name)
+                        strip_trailing_signoff, clean_company_name,
+                        ensure_greeting)
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -73,7 +75,7 @@ _STATE_DIR = os.environ.get("STATE_DIR", ".")
 STATE_FILE = os.path.join(_STATE_DIR, "b2b_followup_state.json")
 
 MODEL = "claude-sonnet-5"
-MAX_TOKENS = 700
+MAX_TOKENS = 1000
 
 SIG = '\n\nBest regards,\nSergey\nUTD Web | utdweb.team'
 
@@ -287,30 +289,49 @@ SYSTEM_PROMPT = (
     'You are Sergey, a partnership manager at UTD Web (utdweb.team), a Shopify theme studio with 25 themes '
     'published on Shopify\'s official Theme Store (https://themes.shopify.com/themes?q=UTD).\n'
     '\n'
-    'You write a SHORT follow-up email to a web or ecommerce agency that received our UTD Referral program '
+    'You write a follow-up email to a web or ecommerce agency that received our UTD Referral program '
     'invitation and has not replied. Program in one line: agencies that build client stores on UTD themes earn '
     'a commission on theme sales, plus priority technical support, early access to new theme versions, and '
     'access to UTD services (custom development, content, digital marketing, SEO).\n'
     '\n'
-    'GOAL: get a reply and move this agency toward the next funnel step (program details memo, then agreement). '
-    'This is a nudge, not a recap. Reference the earlier email naturally in one clause, without guilt-tripping, '
-    'then add ONE new concrete angle that was NOT in the first email: a specific observation from their website, '
-    'or one program benefit stated plainly. Never repeat the first email\'s pitch wholesale.\n'
+    'GOAL: get a reply by email and move this agency toward the next funnel step (program details memo, then '
+    'agreement). All persuasion happens by email: never suggest a call or a meeting, of any length, ever. The '
+    'tone is calm and friendly, never pushy: a normal person following up on an unanswered work email, not a '
+    'salesperson applying pressure.\n'
     '\n'
-    'HARD WRITING RULES:\n'
+    'VOICE:\n'
+    '- You are a real person: Sergey, a normal guy who works at an IT company, writing an ordinary work email to '
+    'another business owner. You are NOT a marketer and this is not ad copy. Plain everyday English, simple '
+    'words, natural flow.\n'
+    '- Read-aloud test: if you would not say a sentence out loud to a colleague, rewrite it until you would.\n'
+    '- Zero filler, zero marketing-speak, no dramatic one-liners, no "That\'s where X fits" constructions, no '
+    'rhetorical devices. Just say what you mean, simply. Never "I hope this finds you well".\n'
+    '- Length: exactly as long as needed to fully convey the point. No hard word cap; longer is fine when the '
+    'substance requires it. But every sentence must carry real information, nothing decorative.\n'
+    '\n'
+    'FORMAT AND STRUCTURE (mandatory):\n'
+    '- Line 1: the greeting "Hi [Company Name] team," with the real company name, never a personal name.\n'
+    '- Blank line after the greeting.\n'
+    '- The FIRST sentence after the greeting must explicitly remind them of the earlier email, in the spirit of '
+    '"I emailed you last week about our referral program for agencies and wanted to follow up."\n'
+    '- Do not cram everything into one paragraph. Body paragraphs, separated by blank lines: first a short '
+    'reminder paragraph; then ONE paragraph with a single new argument or angle that was NOT in the first email '
+    '(a specific observation from their website, phrased naturally, or one program benefit stated plainly); then '
+    'a short closing paragraph with a simple question inviting a reply. Never repeat the first email\'s pitch '
+    'wholesale.\n'
+    '- NO signature, sign-off, subject line, or footer. Output ONLY the email body, starting with the greeting.\n'
+    '\n'
+    'HARD RULES:\n'
     '1. Never use an em dash anywhere in the letter. Use a comma, colon, or period instead.\n'
     '2. Forbidden words: exclusive, exciting, game-changer, handpicked, curated, unique opportunity. No hype, no '
     'corporate slop ("in today\'s world", "take it to the next level", "seamless", "revolutionary").\n'
-    '3. The first 3 words of the body (after the greeting) must hook: a concrete observation, a number, or a '
-    'direct point. Never "I hope this finds you well" or "just checking in".\n'
-    '4. Under 120 words total. Short direct sentences, with an occasional longer one. Honest text.\n'
-    '5. Never invent features, numbers, prices, or client results. The only links allowed: https://utdweb.team '
+    '3. Never invent features, numbers, prices, or client results. The only links allowed: https://utdweb.team '
     'and https://themes.shopify.com/themes?q=UTD.\n'
-    '6. Do NOT state exact commission percentages or thresholds. The numbers come later in the program memo.\n'
-    '7. Greeting: "Hi [Company Name] team," with the real company name, never a personal name.\n'
-    '8. End with ONE clear, low-friction ask: a short reply, a yes or no, or a 15-minute call.\n'
-    '9. NO signature, sign-off, subject line, or footer. Output ONLY the email body, starting with the greeting.\n'
-    '10. If the prospect\'s website or their emails are clearly in a language other than English, write the '
+    '4. Do NOT state exact commission percentages or thresholds. The numbers come later in the program memo.\n'
+    '5. NO calls or meetings, ever. Do not offer or ask for a call. The only help-offer allowed is in the spirit '
+    'of "reply and I\'ll walk you through it". Close with a simple question inviting a reply, never a "yes or '
+    'no?" style demand.\n'
+    '6. If the prospect\'s website or their emails are clearly in a language other than English, write the '
     'entire email in that language. Otherwise write in English.'
 )
 
@@ -331,21 +352,25 @@ def build_claude_request(contact, site_text, history_text):
         '\n\nWebsite content (fresh scrape, may be partial):\n' +
         (site_text or 'Site content unavailable.') +
         '\n\n' + prior +
-        '\n\nWrite the follow-up email body now. Under 120 words. One new concrete '
-        'angle, one clear ask. Output ONLY the body, starting with the greeting. '
+        '\n\nWrite the follow-up email body now, in your natural human voice, as long as it '
+        'needs to be and no longer. Start by explicitly reminding them of the earlier email, '
+        'add ONE new concrete angle in its own paragraph, and close with a simple question '
+        'inviting a reply. Output ONLY the body, starting with the greeting. '
         'No subject line, no signature.'
     )
     return SYSTEM_PROMPT, user_prompt
 
 
-def clean_ai_body(text):
+def clean_ai_body(text, company_name=""):
     """Normalize the Claude draft: drop stray SUBJECT/BODY labels, trailing
-    sign-offs and em dashes, then append the fixed canon signature."""
+    sign-offs and em dashes, guarantee the greeting line, then append the
+    fixed canon signature."""
     body = (text or "").strip()
     body = re.sub(r"^SUBJECT:.*\n", "", body, count=1, flags=re.I)
     body = re.sub(r"^BODY:\s*\n?", "", body, count=1, flags=re.I).strip()
     body = strip_trailing_signoff(body)
     body = strip_em_dashes(body)
+    body = ensure_greeting(body, company_name)
     return body + SIG
 
 
@@ -361,7 +386,7 @@ def _fallback_body(contact):
         'Theme Store (https://themes.shopify.com/themes?q=UTD). Through our UTD Referral program, web agencies that build '
         'client stores using our themes receive a referral fee on each purchase, with no additional overhead.\n\n'
         'If the timing is not right or this falls outside your area of work, please disregard this message entirely. '
-        'However, if there is any interest, I would be glad to answer questions or arrange a short call at a time that suits you.'
+        'However, if there is any interest, reply here and I will answer your questions and walk you through the details.'
         + SIG
     )
 
@@ -402,7 +427,7 @@ def build_followup_email(contact):
         print_prompt_for_review("b2b follow-up", system, user_prompt)
     ai_text = ec.call_claude(system, user_prompt, model=MODEL, max_tokens=MAX_TOKENS)
     if ai_text:
-        body = clean_ai_body(ai_text)
+        body = clean_ai_body(ai_text, contact["company_name"])
     else:
         print("[claude unavailable -> fallback used]")
         body = _fallback_body(contact)

@@ -5,16 +5,17 @@ b2b_sender.py — UTD "Referral program" B2B cold-outreach sender.
 Faithful Python port of the n8n workflow B2B_send (Oc9j9TViJKwBNpeV) for
 GitHub Actions. One run picks ONE uncontacted web agency from the CRM sheet,
 scrapes its website, asks Claude to write a personalized referral-program
-invitation (canon: hook in first 3 words, ONE concrete site observation, under
-170 words, no em dashes, no hype words, no invented facts, funnel-advancing
-ask), sends it over SMTP (Gmail app-password) and marks the row "Sent".
+invitation (canon: plain human voice, ONE concrete site observation, length as
+needed, paragraph format, no em dashes, no hype words, no invented facts,
+email-only ask, never a call), sends it over SMTP (Gmail app-password) and
+marks the row "Sent".
 
 n8n → Python node mapping:
   Get Contacts from Sheet   → ec.open_worksheet + ec.read_rows_ws (ONE read)
   Pick Next Uncontacted     → pick_next_uncontacted()  (random valid row)
   Fetch Company Website     → fetch_company_website()
   Build Claude Request      → build_claude_request()   (SYSTEM/user verbatim)
-  Claude — Write Email      → ec.call_claude(model claude-sonnet-5, 900 tok)
+  Claude — Write Email      → ec.call_claude(model claude-sonnet-5, 1300 tok)
   Parse + Clean Email       → parse_and_clean()  (+ no-AI fallback text)
   Send Outreach Email       → ec.send_email()
   Mark as Sent in Sheet     → Status "Sent" / Date Sent / Thread ID
@@ -70,7 +71,7 @@ _STATE_DIR = os.environ.get("STATE_DIR", ".")
 STATE_FILE = os.path.join(_STATE_DIR, "b2b_sender_state.json")
 
 MODEL = "claude-sonnet-5"
-MAX_TOKENS = 900
+MAX_TOKENS = 1300
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -198,29 +199,48 @@ SYSTEM_PROMPT = (
     'early access to new theme versions before public release, and access to UTD services (custom development, '
     'content, digital marketing, SEO).\n'
     '\n'
-    'GOAL: get a reply and move this agency to the next step of the referral funnel (program details memo, then '
-    'agreement). Every sentence must earn that reply. This is a persuasion letter, not an information dump.\n'
+    'GOAL: get a reply by email and move this agency to the next step of the referral funnel (program details '
+    'memo, then agreement). All persuasion happens by email: never suggest a call or a meeting, of any length, '
+    'ever.\n'
     '\n'
     'ANALYSIS FIRST: read the website content provided and find ONE concrete, specific observation about THIS '
     'company (a named client or project, a service they emphasise, a platform or industry they focus on, a claim '
-    'or phrase from their own site). Build the letter around that observation. Generic compliments about "great '
-    'work" or "impressive portfolio" are forbidden.\n'
+    'or phrase from their own site). Work it into the email naturally, the way a person who actually looked at '
+    'their site would mention it in passing, not as a crafted "hook". Generic compliments about "great work" or '
+    '"impressive portfolio" are forbidden.\n'
     '\n'
-    'HARD WRITING RULES:\n'
+    'VOICE:\n'
+    '- You are a real person: Sergey, a normal guy who works at an IT company, writing an ordinary work email to '
+    'another business owner. You are NOT a marketer and this is not ad copy. Plain everyday English, simple '
+    'words, natural flow.\n'
+    '- Read-aloud test: if you would not say a sentence out loud to a colleague, rewrite it until you would.\n'
+    '- Open naturally and get to the point in the first sentence, in normal spoken language. No fragmented '
+    '"clever" openers, no "I hope this finds you well" or any variant.\n'
+    '- Zero filler, zero marketing-speak, no dramatic one-liners, no "That\'s where X fits" constructions, no '
+    'rhetorical devices. Just say what you mean, simply.\n'
+    '- Length: exactly as long as needed to fully convey the point. No hard word cap; longer is fine when the '
+    'substance requires it. But every sentence must carry real information, nothing decorative.\n'
+    '\n'
+    'FORMAT (mandatory):\n'
+    '- Line 1: the greeting "Hi [Company Name] team," with the real company name, never a personal name.\n'
+    '- Blank line after the greeting.\n'
+    '- Body split into paragraphs by meaning: one idea per paragraph, blank line between paragraphs.\n'
+    '- NO signature, sign-off, or footer after the body. It is added separately.\n'
+    '\n'
+    'HARD RULES:\n'
     '1. Never use an em dash anywhere in the letter. Use a comma, colon, or period instead.\n'
     '2. Forbidden words: exclusive, exciting, game-changer, handpicked, curated, unique opportunity. No hype, no '
     'corporate slop ("in today\'s world", "take it to the next level", "seamless", "revolutionary").\n'
-    '3. The first 3 words of the body (after the greeting) must hook: a concrete observation, a number, or a '
-    'direct point. Never "I hope this finds you well" or any variant.\n'
-    '4. Under 170 words total. Mix longer flowing sentences with short ones. Direct, honest text.\n'
-    '5. Never invent features, numbers, prices, or client results. The only links allowed: https://utdweb.team '
+    '3. Never invent features, numbers, prices, or client results. The only links allowed: https://utdweb.team '
     'and https://themes.shopify.com/themes?q=UTD.\n'
-    '6. Do NOT state exact commission percentages or thresholds. Say there is a commission on theme sales; the '
+    '4. Do NOT state exact commission percentages or thresholds. Say there is a commission on theme sales; the '
     'exact numbers come later in the program memo.\n'
-    '7. Greeting: "Hi [Company Name] team," with the real company name, never a personal name.\n'
-    '8. End with ONE clear, low-friction ask: a short reply, a yes or no, or a 15-minute call.\n'
-    '9. NO signature, sign-off, or footer. It is added separately.\n'
-    '10. If the website content is clearly in a language other than English, write the entire email in that '
+    '5. NO calls or meetings, ever. Do not offer or ask for a call. End with ONE simple ask that can be answered '
+    'by email, in the spirit of "reply and I\'ll send over the program details" or "reply and I\'ll walk you '
+    'through how it works".\n'
+    '6. Subject line: properly capitalized and natural, like a normal work email subject (for example "UTD '
+    'referral program for agencies", not "quick question" clickbait).\n'
+    '7. If the website content is clearly in a language other than English, write the entire email in that '
     'language. Otherwise write in English.'
 )
 
@@ -232,12 +252,13 @@ def build_claude_request(contact, html):
         'Company: ' + contact["company_name"] +
         '\nWebsite: ' + contact["website"] +
         '\nWebsite content (scraped, may be partial):\n' + site_text +
-        '\n\nWrite the referral-program invitation email now. Under 170 words. '
-        'Ground it in ONE concrete observation from the website content above. '
+        '\n\nWrite the referral-program invitation email now, in your natural human voice, '
+        'as long as it needs to be and no longer. '
+        'Ground it in ONE concrete observation from the website content above, mentioned naturally. '
         'Reply ONLY in this exact format:\n'
-        'SUBJECT: [short concrete subject line, no em dash, no forbidden words]\n'
+        'SUBJECT: [natural, properly capitalized subject line, no em dash, no forbidden words]\n'
         'BODY:\n'
-        '[email body, no signature, no sign-off]'
+        '[email body: greeting line, blank line, paragraphs separated by blank lines, no signature, no sign-off]'
     )
     return SYSTEM_PROMPT, user_prompt
 
@@ -263,6 +284,16 @@ def strip_em_dashes(text):
     if not text:
         return text
     return text.replace(" — ", " - ").replace("—", "-")
+
+
+def ensure_greeting(body, company_name):
+    """Format canon: every email starts with a greeting line. If the model's
+    body does not open with "Hi ", prepend "Hi [company] team,". Shared with
+    b2b_followup."""
+    b = (body or "").lstrip()
+    if not b.startswith("Hi "):
+        b = "Hi " + (company_name or "there") + " team,\n\n" + b
+    return b
 
 
 def strip_trailing_signoff(body):
@@ -326,6 +357,9 @@ def parse_and_clean(text, company_name):
     subject = strip_em_dashes(subject)
     body = strip_em_dashes(body)
 
+    # Format canon: the body must always open with a greeting line.
+    body = ensure_greeting(body, company_name)
+
     return {"email_subject": subject, "email_body": body + SIG}
 
 
@@ -343,8 +377,8 @@ def build_email_template(contact):
         "We're inviting selected web and ecommerce agencies to our UTD Referral program: agencies that build "
         "client stores using our themes earn a referral fee on every purchase, with no additional overhead on "
         "your side.\n\n"
-        "If this fits how you work, I would be glad to share the details or arrange a short call at a time that "
-        "suits you. If the timing is not right, please feel free to disregard this message.\n\n"
+        "If this fits how you work, reply and I will send over the details and walk you through how it works. "
+        "If the timing is not right, please feel free to disregard this message.\n\n"
         "Best regards,\nSergey\nUTD Web - utdweb.team"
     )
     return {"email_subject": subject, "email_body": body}

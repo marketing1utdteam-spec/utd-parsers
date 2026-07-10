@@ -188,9 +188,14 @@ SYSTEM_PROMPT = (
 "REPLY RULES (for interested and question):\n"
 "- Use ONLY the facts above. Never invent numbers, dates, names or links. Only links allowed: https://utdweb.team and https://themes.shopify.com/themes?q=UTD\n"
 "- Reply in the language of the incoming email.\n"
-"- Under 200 words. Complete, well-formed sentences. Never use em dashes. Never use the words: exclusive, exciting, game-changer, handpicked, curated, unique opportunity.\n"
+"- Write like a real person: you are Sergey, a normal guy at UTD Web writing an ordinary work email. Plain everyday words, simple sentences, natural flow. Read-aloud test: if you would not say a sentence out loud to a colleague, rewrite it.\n"
+"- Open naturally and get to the point in the first sentence. Zero filler, no marketing-speak, no dramatic one-liners.\n"
+"- The reply is as long as it needs to be to fully answer and move things forward, no longer. Complete, well-formed sentences.\n"
+"- FORMAT (mandatory): line 1 is a greeting; then a blank line; then the body in short paragraphs by meaning (one idea per paragraph, blank lines between); then a blank line, the farewell and signature.\n"
+"- Never offer or suggest a call or meeting. Everything is handled by email; you may offer help by email ('reply and I'll walk you through it'). If THEY push for a call at a specific time, that is escalate per the category rules.\n"
+"- Never use em dashes. Never use the words: exclusive, exciting, game-changer, handpicked, curated, unique opportunity.\n"
 "- Do not promise anything beyond the facts.\n"
-"- End the reply with:\nBest regards,\nSergey\nUTD Web | utdweb.team\n\n"
+"- End the reply with exactly:\nBest regards,\nSergey\nUTD Web | utdweb.team\n\n"
 "Output ONLY the JSON object, no markdown fences, no commentary."
 )
 
@@ -555,20 +560,25 @@ def _last_outbound_dt(state, row, email):
 
 REMINDER_BODY = {
     "Qualifying": (
-        "I wanted to follow up on my last note about the UTD Agency Partner Program. "
+        "Hi,\n\n"
+        "I wanted to follow up on my last note about the UTD Agency Partner Program.\n\n"
         "Whenever you have a moment, it would help to know which themes you currently use for clients, "
         "roughly how many themes you buy per month, whether you already work with other theme providers, "
-        "and how you usually handle theme purchases for your clients. Once I have that I will send you the "
-        "full program overview.\n\nBest regards,\nSergey\nUTD Web | utdweb.team"),
+        "and how you usually handle theme purchases for your clients.\n\n"
+        "Once I have that I will send you the full program overview.\n\n"
+        "Best regards,\nSergey\nUTD Web | utdweb.team"),
     "Memo Sent": (
-        "I am following up on the program overview I sent earlier. Did you get a chance to look it over? "
+        "Hi,\n\n"
+        "I am following up on the program overview I sent earlier. Did you get a chance to look it over?\n\n"
         "I am happy to answer any questions about commission, payouts or reporting. If it looks like a fit, "
         "I can send over the Agency Partner Agreement so you can get started.\n\n"
         "Best regards,\nSergey\nUTD Web | utdweb.team"),
     "Agreement Sent": (
+        "Hi,\n\n"
         "I am following up on the Agency Partner Agreement I sent. To start earning commission on confirmed "
-        "theme purchases you only need to sign your side and send it back. There is no fee and no exclusivity, "
-        "and you can withdraw in writing at any time. If any clause needs clarifying I am glad to help.\n\n"
+        "theme purchases you only need to sign your side and send it back.\n\n"
+        "There is no fee and no exclusivity, and you can withdraw in writing at any time. If any clause "
+        "needs clarifying, reply and I will walk you through it.\n\n"
         "Best regards,\nSergey\nUTD Web | utdweb.team"),
 }
 

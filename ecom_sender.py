@@ -94,13 +94,40 @@ _UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
 # ═══════════════════════════════════════════════════════════════════
 
 CATALOG = {
-    "Impression": {"price": "$340", "pitch": "flagship premium theme, EU translations, cross-selling, mega menu, size chart, pre-order"},
-    "Victory": {"price": "$320", "pitch": "built for sports, events and active brands: store locator, event calendar, age verifier, countdowns"},
-    "Boutique": {"price": "$160", "pitch": "made for boutiques and premium brands, elegant product-first layouts"},
-    "Ultra": {"price": "$100", "pitch": "multi-purpose workhorse for tech, furniture, auto and toys"},
-    "Allure": {"price": "$100", "pitch": "versatile and affordable, great for beauty and lifestyle stores"},
-    "Gain": {"price": "$100", "pitch": "premium minimalist design that keeps the focus on products"},
+    "Impression": {"price": "$340", "link": "https://themes.shopify.com/themes/impression",
+                   "pitch": "flagship premium theme, EU translations, cross-selling, mega menu, size chart, pre-order"},
+    "Victory": {"price": "$320", "link": "https://themes.shopify.com/themes/victory",
+                "pitch": "built for sports, events and active brands: store locator, event calendar, age verifier, countdowns"},
+    "Boutique": {"price": "$160", "link": "https://themes.shopify.com/themes/boutique",
+                 "pitch": "made for boutiques and premium brands, elegant product-first layouts"},
+    "Ultra": {"price": "$100", "link": "https://themes.shopify.com/themes/ultra",
+              "pitch": "multi-purpose workhorse for tech, furniture, auto and toys"},
+    "Allure": {"price": "$100", "link": "https://themes.shopify.com/themes/allure",
+               "pitch": "versatile and affordable, great for beauty and lifestyle stores"},
+    "Gain": {"price": "$100", "link": "https://themes.shopify.com/themes/gain",
+             "pitch": "premium minimalist design that keeps the focus on products"},
 }
+
+
+def _tref(name):
+    """How a theme must appear ANYWHERE it is named: Name ($price, link)."""
+    t = CATALOG[name]
+    return name + " (" + t["price"] + ", " + t["link"] + ")"
+
+
+def _tline(name):
+    """Full catalog line for the prompt: Name ($price, link): pitch."""
+    t = CATALOG[name]
+    return name + " (" + t["price"] + ", " + t["link"] + "): " + t["pitch"]
+
+
+def _names_with_links(csv_names, fallback_names):
+    """Render a comma-separated theme-name list (e.g. the sheet's Suggested
+    Themes) with each theme's price + Theme Store link attached."""
+    names = [s.strip() for s in (csv_names or "").split(",") if s.strip()]
+    if not names:
+        names = list(fallback_names)
+    return ", ".join(_tref(n) if n in CATALOG else n for n in names)
 
 MAP = {
     "Fashion & Apparel": ["Impression", "Boutique", "Gain", "Allure", "Victory"],
@@ -120,25 +147,71 @@ MAP = {
 REGISTRY = "https://themes.shopify.com/themes?q=UTD"
 SITE = "https://utdweb.team"
 
-BASE = ("You are Sergey from UTD Web, an official Shopify Theme Store developer "
-        "(6 theme families, built-in conversion features: upsells, cross-sells, "
-        "promo sections). You write to the owner of a real Shopify store. "
-        "GOAL: move the merchant toward choosing and buying the UTD theme that "
-        "fits their store. Concrete benefits to lean on: conversion features "
-        "built in (fewer paid apps), fast themes, official Shopify Theme Store "
-        "status (safe purchase, preview before publish, products stay in place). "
-        "STYLE: human and specific. Hook in the first 3 words. Lead with a "
-        "concrete observation or fact, never a generic compliment. No hype, no "
-        "corporate slop. Never use an em dash. Forbidden words: exclusive, "
-        "exciting, game-changer, handpicked, curated, unique opportunity. "
+FACTS = (
+    "FACTS you may cite. Only these, always naming the source in plain words "
+    "(no URLs needed for the studies). NEVER invent or estimate other numbers.\n"
+    "- Google/SOASTA research (2017): the probability of a mobile visitor "
+    "bouncing rises 32% as page load time goes from 1 second to 3 seconds.\n"
+    "- Deloitte and Google, 'Milliseconds Make Millions' (2020): a 0.1 second "
+    "speed improvement lifted retail conversions by about 8.4%.\n"
+    "- Portent (2022): sites that load in 1 second convert about 2.5x better "
+    "than sites that load in 5 seconds.\n"
+    "- Baymard Institute: about 70% of carts are abandoned on average, and a "
+    "complicated checkout is one of the top causes.\n"
+    "- UTD facts: our themes have upsell, cross-sell and promo blocks built in, "
+    "which replaces several paid apps (typical Shopify apps run $15-50/month "
+    "each). The themes are listed in the official Shopify Theme Store, which "
+    "means Shopify reviewed them before listing. A theme purchase is one-time "
+    "(prices are given per theme) and includes updates.\n"
+    "Use at most 1-2 stats per email, woven in naturally where they support "
+    "the pain argument. Never dump statistics.")
+
+BASE = ("You are Sergey, a normal guy who works at UTD Web, an IT company that "
+        "builds themes for the official Shopify Theme Store. You are writing an "
+        "ordinary work email to the owner of a real Shopify store.\n"
+        "\n"
+        "GOAL: start a real conversation and help the merchant pick the UTD "
+        "theme that solves a problem they actually have. Everything happens by "
+        "email: NEVER suggest a call, a meeting or a calendar link. It is fine "
+        "to say something like 'if anything is unclear, just reply and I will "
+        "help you set it up'.\n"
+        "\n"
+        "VOICE: write like a real person, not a marketer. Plain everyday "
+        "English, simple words, natural flow; every sentence should survive "
+        "being read aloud. Open naturally and get to the point in the first "
+        "sentence. Zero filler, no marketing-speak, no dramatic constructions, "
+        "no hype. Never use an em dash. Forbidden words: exclusive, exciting, "
+        "game-changer, handpicked, curated, unique opportunity. There is no "
+        "length limit: take as much space as the point needs, but make every "
+        "sentence carry information.\n"
+        "\n"
+        "PAIN FIRST: from what you know about their site and industry, name "
+        "the problem they most likely live with (slow pages, a stack of paid "
+        "apps that adds up every month, low conversion, a clunky checkout) and "
+        "present the theme as the fix for THAT problem, not as a generic "
+        "product pitch.\n"
+        "\n"
+        "FORMAT, mandatory for EVERY email including follow-up replies:\n"
+        "- line 1: a greeting, 'Hi [store or person name] team,' or 'Hi "
+        "there,' if there is no name\n"
+        "- blank line\n"
+        "- body split into short paragraphs by meaning, never one big mixed "
+        "block\n"
+        "- do NOT add a farewell or signature, it is appended separately.\n"
+        "\n"
+        "LINKS: every single time you name a theme, put its Theme Store link "
+        "right next to it. Each theme page has a live preview/demo, so the "
+        "merchant can click around a real working store. Other allowed links: " +
+        REGISTRY + " (full UTD catalog) and " + SITE + ". No other links.\n"
+        "\n" + FACTS + "\n"
+        "\n"
         "Never invent features, prices or numbers; use only the facts given "
-        "here. Never disparage their current theme. The only links allowed: " +
-        SITE + " and " + REGISTRY + ". Write in English unless the merchant "
-        "wrote to us in another language in this thread, then use their "
-        "language. NO signature (it is added separately).")
+        "here. Never disparage their current theme. Write in English unless "
+        "the merchant wrote to us in another language in this thread, then "
+        "use their language.")
 
 MODEL = "claude-sonnet-5"
-MAX_TOKENS = 900
+MAX_TOKENS = 1300
 
 # Signature appended to every body by the n8n «Parse Email» node.
 SIGNATURE = "\n\nBest regards,\nSergey\nUTD Web | utdweb.team"
@@ -324,18 +397,21 @@ def summarize_prior_touches(c):
     (Suggested Themes / Status / Date Sent)."""
     themes = c.get("suggested") or "the themes recommended for their industry"
     sums = {
-        1: ("Touch 1 (first cold email): one specific observation about their "
-            "store, introduced UTD Web (official Shopify Theme Store developer, "
-            "conversion features built in), recommended these themes for their " +
-            (c.get("industry") or "niche") + " niche with prices: " + themes +
-            ". Shared the catalog links and offered questions or a demo store."),
-        2: ("Touch 2 (short bump in the same thread): lightly referenced the "
-            "first note, offered to send a live demo store of the best-fit "
-            "theme, asked if they had questions."),
-        3: ("Touch 3 (value follow-up): explained UTD themes ship with upsells, "
-            "cross-sells and promo sections built in (usually fewer paid apps), "
-            "switching is low-risk (preview before publish, products stay in "
-            "place), re-named the top themes: " + themes + "."),
+        1: ("Touch 1 (first cold email): named the likely pain for their " +
+            (c.get("industry") or "niche") + " store, introduced Sergey from "
+            "UTD Web (official Shopify Theme Store developer), recommended all "
+            "5 industry-fit themes with prices and Theme Store links (top 2-3 "
+            "with reasons, the rest as alternatives): " + themes + ". Pointed "
+            "them at the live demos on each theme page and ended with a "
+            "question about what annoys them in their current setup."),
+        2: ("Touch 2 (follow-up reply): reminded them of the first email, "
+            "added one speed/conversion stat tied to their likely pain, "
+            "nudged them to open the live demo of the best-fit theme (with "
+            "its link), asked an easy question."),
+        3: ("Touch 3 (value follow-up): did the cost math, built-in upsell/"
+            "cross-sell/promo blocks replace several paid apps ($15-50/month "
+            "each) while the theme is a one-time purchase with updates "
+            "included, re-named the top themes with links: " + themes + "."),
     }
     lines = [sums[t] for t in range(1, c["touch"]) if t in sums]
     tail = "The merchant has not replied so far."
@@ -380,67 +456,104 @@ def build_request(c, site_text, history=""):
     order = MAP.get(c["industry"]) or ["Impression", "Ultra", "Allure", "Gain", "Victory"]
     primary, alt = order[:3], order[3:5]
 
-    def tline(n):
-        return n + " (" + CATALOG[n]["price"] + "): " + CATALOG[n]["pitch"]
-
     store = c["store_name"] or c["website"]
     touch = c["touch"]
+    suggested_links = _names_with_links(c.get("suggested"), primary)
 
     if touch == 1:
         sys = (BASE +
-               "\n\nFIRST cold email. Structure: (1) one SPECIFIC observation about "
-               "their store from the site content; (2) one sentence who we are; (3) "
-               "confidently recommend 2-3 themes for their industry, each a concrete "
-               "reason tied to their store: " + " | ".join(tline(n) for n in primary) +
-               "; (4) one line naming the remaining alternatives so 5 total: " +
-               ", ".join(n + " (" + CATALOG[n]["price"] + ")" for n in alt) +
-               "; (5) links to full catalog: " + REGISTRY + " and " + SITE +
-               "; (6) soft close offering questions or a demo store. Under 160 words."
-               "\nOutput:\nSUBJECT: [subject naming their niche]\nBODY:\n[body]")
+               "\n\nThis is the FIRST email, a new thread.\n"
+               "After the greeting, open naturally with what you noticed on their "
+               "site and the pain that usually comes with it for a store like "
+               "theirs, then one plain sentence about who you are and what UTD "
+               "Web does.\n"
+               "Then recommend themes for their industry. Emphasize the top 2-3, "
+               "each with its link and a concrete reason tied to their store:\n" +
+               "\n".join("- " + _tline(n) for n in primary) + "\n"
+               "Then one line listing the remaining alternatives, with links, so "
+               "all 5 are on the table: " + ", ".join(_tref(n) for n in alt) + ".\n"
+               "Include the demo right away: in one plain sentence tell them that "
+               "every theme link above opens the Theme Store page with a live "
+               "preview/demo, and what to click and look at there (for example "
+               "open the demo and walk through a product page and the checkout "
+               "to see the speed and the built-in upsell blocks).\n"
+               "You may also mention the full catalog: " + REGISTRY + ".\n"
+               "END the body with a question about THEIR situation that starts a "
+               "conversation: what annoys them most in their current setup, or "
+               "which direction they are leaning. The goal of this email is a "
+               "reply, not an instant sale.\n"
+               "SUBJECT: natural and properly capitalized, naming their niche."
+               "\nOutput:\nSUBJECT: [subject]\nBODY:\n[body]")
         user = ("Store: " + store + "\nWebsite: " + c["website"] + "\nIndustry: " +
                 c["industry"] + "\n\nSite content:\n" + (site_text or "(unavailable)") +
                 "\n\nWrite the email.")
     elif touch == 2:
         sys = (BASE +
-               "\n\nSECOND email, a short follow-up in the SAME thread (no reply yet). "
-               "60-90 words, hard cap 120. You are shown the previous emails in this "
-               "thread: BUILD on them, never repeat the same pitch or reuse the same "
-               "wording. Reference the first note lightly. Offer to send a live demo "
-               "store of the best-fit theme for their niche, and ask if they had any "
-               "questions. One theme name max. No subject needed (reply keeps thread "
-               "subject) but still output SUBJECT line as short."
-               "\nOutput:\nSUBJECT: [short]\nBODY:\n[body]")
+               "\n\nThis is the SECOND email, a reply in the SAME thread (they "
+               "have not answered yet). You are shown the previous emails: build "
+               "on them, never repeat the same pitch or reuse the same wording.\n"
+               "Start with the greeting line, it is mandatory even in a reply. "
+               "The FIRST sentence after the greeting must remind them of the "
+               "previous email, something like 'I emailed you last week about "
+               "themes for your store...'. Calm tone, never pushy.\n"
+               "Then add ONE new thing: a relevant stat from the FACTS block "
+               "tied to their likely pain, and a nudge to open the live demo of "
+               "the best-fit theme, naming it WITH its Theme Store link.\n"
+               "Keep the body in a few short paragraphs, never one mixed block. "
+               "End with an easy question they can answer in one line.\n"
+               "SUBJECT: short, natural, properly capitalized (the reply keeps "
+               "the thread subject, but output one anyway)."
+               "\nOutput:\nSUBJECT: [subject]\nBODY:\n[body]")
         user = ("Store: " + store + "\nIndustry: " + c["industry"] +
-                "\nThemes we suggested earlier: " + (c["suggested"] or ", ".join(primary)) +
+                "\nThemes we suggested earlier: " + suggested_links +
                 "\n\nPrevious emails in this thread:\n" + (history or "(unavailable)") +
-                "\n\nWrite a short bump that builds on the thread above without "
-                "repeating it.")
+                "\n\nWrite the follow-up. It must build on the thread above "
+                "without repeating it.")
     elif touch == 3:
         sys = (BASE +
-               "\n\nTHIRD email, follow-up in the same thread. 70-110 words, hard cap "
-               "120. You are shown the previous emails in this thread: take a DIFFERENT "
-               "angle from both earlier notes, never repeat what was already said. Focus "
-               "on ONE concrete value point relevant to their store: UTD themes have "
-               "conversion features built in (upsells, cross-sells, promo sections) "
-               "which usually cut spend on extra apps, and switching a theme is low-risk "
-               "(preview before publish, products stay). Re-name the top 2 themes for "
-               "their niche. End with a light question that nudges them to pick a theme."
-               "\nOutput:\nSUBJECT: [short]\nBODY:\n[body]")
+               "\n\nThis is the THIRD email, a reply in the same thread. You are "
+               "shown the previous emails: take a DIFFERENT angle from both "
+               "earlier notes, never repeat what was already said.\n"
+               "Start with the greeting line, it is mandatory even in a reply. "
+               "The FIRST sentence after the greeting must remind them that you "
+               "wrote earlier about themes for their store. Calm, never pushy.\n"
+               "The angle of this email is money: do the simple value math with "
+               "them. A store usually pays for several apps that do what the "
+               "theme already includes (upsell, cross-sell and promo blocks; "
+               "typical Shopify apps run $15-50/month each), while the theme is "
+               "a one-time purchase with updates included. Use the actual theme "
+               "prices. You may add one stat from the FACTS block if it supports "
+               "the point. Re-name the top 2 themes for their niche, each WITH "
+               "its Theme Store link, and remind them the live demo is one click "
+               "away on those pages.\n"
+               "End with a light question that helps them pick a direction.\n"
+               "SUBJECT: short, natural, properly capitalized."
+               "\nOutput:\nSUBJECT: [subject]\nBODY:\n[body]")
         user = ("Store: " + store + "\nIndustry: " + c["industry"] + "\nTop themes: " +
-                (c["suggested"] or ", ".join(primary)) +
+                suggested_links +
                 "\n\nPrevious emails in this thread:\n" + (history or "(unavailable)") +
-                "\n\nWrite the value follow-up. It must add something new versus the "
-                "thread above.")
+                "\n\nWrite the value follow-up. It must add something new versus "
+                "the thread above.")
     else:
         sys = (BASE +
-               "\n\nFOURTH and final email, a polite breakup in the same thread. 45-70 "
-               "words, hard cap 120. You are shown the previous emails in this thread: "
-               "acknowledge the sequence naturally, do not re-pitch and do not repeat "
-               "earlier lines. Say you will assume the timing is not right and will not "
-               "keep following up, leave the catalog link " + REGISTRY + " for whenever "
-               "it fits, wish them well. Warm, no guilt, no pressure."
-               "\nOutput:\nSUBJECT: [short]\nBODY:\n[body]")
+               "\n\nThis is the FOURTH and final email, a calm breakup in the "
+               "same thread. You are shown the previous emails: acknowledge the "
+               "sequence naturally, do not re-pitch and do not repeat earlier "
+               "lines.\n"
+               "Start with the greeting line, it is mandatory even in a reply. "
+               "The FIRST sentence after the greeting should reference that you "
+               "have written a few times about themes for their store.\n"
+               "Say plainly that you will stop emailing so you are not adding "
+               "noise to their inbox, that there is no deadline on any of this, "
+               "and leave the catalog link " + REGISTRY + " for whenever it "
+               "fits. If one theme clearly fit them best, you may name it once, "
+               "WITH its Theme Store link. No guilt, no pressure.\n"
+               "Close by saying they can reply any time and you will help them "
+               "figure things out or set the theme up.\n"
+               "SUBJECT: short, natural, properly capitalized."
+               "\nOutput:\nSUBJECT: [subject]\nBODY:\n[body]")
         user = ("Store: " + store +
+                "\nTop themes we suggested: " + suggested_links +
                 "\n\nPrevious emails in this thread:\n" + (history or "(unavailable)") +
                 "\n\nWrite the breakup email.")
 
@@ -468,37 +581,55 @@ def parse_email(c, ai_text, primary, alt):
         touch = c["touch"]
         if touch == 1:
             subject = "Shopify themes for your " + (
-                c["industry"].lower() if c["industry"] != "Other" else "store")
+                c["industry"].lower() if c["industry"] != "Other" else "store") + " store"
             body = ("Hi " + (c["store_name"] or "there") + " team,\n\n"
                     "I came across your store and wanted to reach out. I am Sergey from "
                     "UTD Web, we build themes for the official Shopify Theme Store with "
-                    "conversion features built in (upsells, cross-sells, promo sections)."
-                    "\n\nFor a store in your niche I would confidently suggest " + p[0] +
-                    " (" + CATALOG[p[0]]["price"] + ") or " + p[1] + " (" +
-                    CATALOG[p[1]]["price"] + "): " + CATALOG[p[0]]["pitch"] + ".\n\n"
-                    "Also worth a look: " + p[2] + ", " + ", ".join(a) + ". Full catalog: " +
-                    REGISTRY + " and " + SITE + "\n\n"
-                    "Happy to answer questions or share a demo store.")
+                    "upsell, cross-sell and promo blocks built in, so they replace "
+                    "several paid apps.\n\n"
+                    "For a store in your niche I would look first at " + _tref(p[0]) +
+                    " or " + _tref(p[1]) + ": " + CATALOG[p[0]]["pitch"] + ".\n\n"
+                    "Also worth a look: " + _tref(p[2]) + ", " +
+                    ", ".join(_tref(n) for n in a) + ". Every link opens the Theme "
+                    "Store page with a live demo, so you can click through a real "
+                    "store. Full catalog: " + REGISTRY + " and " + SITE + "\n\n"
+                    "What annoys you most in your current setup? If anything is "
+                    "unclear, just reply and I will help you figure it out.")
         elif touch == 2:
-            subject = "Quick follow-up"
-            body = ("Hi " + (c["store_name"] or "there") + ",\n\n"
-                    "Just following up on my note about UTD themes for your store. Happy "
-                    "to send you a live demo of " + p[0] + " so you can see it with content "
-                    "like yours. Any questions so far?")
+            subject = "Following up on themes for your store"
+            body = ("Hi " + (c["store_name"] or "there") + " team,\n\n"
+                    "I emailed you last week about Shopify themes for your store and "
+                    "wanted to check back.\n\n"
+                    "If you have a minute, open the live demo of " + _tref(p[0]) +
+                    " and click through a product page. That is the quickest way to "
+                    "see if it fits.\n\n"
+                    "Did you get a chance to look, or is there anything I can answer?")
         elif touch == 3:
-            subject = "One more thought"
-            body = ("Hi " + (c["store_name"] or "there") + ",\n\n"
-                    "One thing worth mentioning: our themes have upsells, cross-sells and "
-                    "promo sections built in, which usually means fewer paid apps. Switching "
-                    "is low-risk since you preview before publishing and your products stay "
-                    "in place. " + p[0] + " and " + p[1] + " fit your niche well. Worth a "
-                    "quick look?")
+            subject = "The math on theme vs paid apps"
+            body = ("Hi " + (c["store_name"] or "there") + " team,\n\n"
+                    "I wrote earlier about themes for your store, one more thing worth "
+                    "mentioning.\n\n"
+                    "Our themes have upsell, cross-sell and promo blocks built in, "
+                    "which replaces several paid apps (typical Shopify apps run "
+                    "$15-50/month each). The theme itself is a one-time purchase and "
+                    "includes updates. For your niche the best fits are " + _tref(p[0]) +
+                    " and " + _tref(p[1]) + ", both pages have live demos.\n\n"
+                    "Which of the two looks closer to what you want?")
         else:
-            subject = "Closing the loop"
-            body = ("Hi " + (c["store_name"] or "there") + ",\n\n"
-                    "I will assume the timing is not right and stop following up. If you "
-                    "ever want to explore a new theme, the full catalog is here: " +
-                    REGISTRY + ". Wishing you a great quarter.")
+            subject = "Last note from me"
+            body = ("Hi " + (c["store_name"] or "there") + " team,\n\n"
+                    "I have written a few times about themes for your store, so this "
+                    "is my last note, I do not want to add noise to your inbox.\n\n"
+                    "There is no deadline on any of this. If you ever want to explore "
+                    "a new theme, the full catalog is here: " + REGISTRY + ".\n\n"
+                    "Reply any time and I will help you set things up. Wishing you a "
+                    "great season.")
+
+    # Hard format guard: EVERY touch must open with a greeting line. If the
+    # model (or a stray parse) dropped it, prepend a neutral one in code.
+    if not re.match(r"^\s*(hi|hello|hey|dear|good\s(morning|afternoon|evening))\b",
+                    body, re.I):
+        body = "Hi there,\n\n" + body
 
     body += SIGNATURE
     next_status = ("Sent" if c["touch"] == 1 else

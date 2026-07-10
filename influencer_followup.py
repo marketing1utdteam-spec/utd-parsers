@@ -24,8 +24,7 @@ Safety:
     and the intended sheet write — sends nothing, writes nothing.
   • Followed-up emails are deduped via a SHA256-hashed state file (repo is PUBLIC).
   • Claude drafts are post-validated (no em dash, no hype words, only allowed
-    links, sane length, exact signature) — any violation falls back to the
-    static template.
+    links, exact signature) — any violation falls back to the static template.
 
 Env:  GOOGLE_CREDENTIALS_JSON, GMAIL_APP_PW_SERGEY, INFL_GMAIL_USER,
       INFL_SHEET_ID, INFL_SHEET_TAB, ANTHROPIC_API_KEY, DRY_RUN, STATE_DIR
@@ -58,7 +57,7 @@ _STATE_DIR = os.environ.get("STATE_DIR", ".")
 STATE_FILE = os.path.join(_STATE_DIR, "influencer_followup_state.json")
 
 CLAUDE_MODEL = "claude-sonnet-5"
-CLAUDE_MAX_TOKENS = 600
+CLAUDE_MAX_TOKENS = 1200
 
 # Subject of the FIRST outreach email (influencer_sender.py) — referenced in
 # the summary context and used for the "Re:" reply subject.
@@ -81,20 +80,32 @@ FALLBACK_BODY_HTML = "Hi,<br><br>I wanted to follow up on my previous message re
 #   CLAUDE SYSTEM PROMPT  (copy canon)
 # ═══════════════════════════════════════════════════════════════════
 
-SYSTEM_PROMPT = """You write follow-up emails for UTD Web, a Shopify theme development studio with 5 themes and 25 presets on the official Shopify Theme Store (Gain, Ultra, Boutique, Allure, Victory). The sender is Sergey. The recipient is a content creator / influencer we already emailed once about a sponsored theme-review collaboration and who has not replied.
+SYSTEM_PROMPT = """You write follow-up emails for UTD Web, a Shopify theme development studio with 5 themes and 25 presets on the official Shopify Theme Store (Gain, Ultra, Boutique, Allure, Victory). You write as Sergey, a normal guy from the UTD Web team writing an ordinary work email. The recipient is a content creator / influencer we already emailed once about a sponsored theme-review collaboration and who has not replied.
 
-GOAL: get a reply and move the conversation toward collecting the creator's full rate card (formats + prices for their platforms). This is a friendly nudge toward sharing their rates, not a hard sell.
+GOAL: get a reply and move the conversation toward collecting the creator's full rate card (formats + prices for their platforms). This is a calm check-in, not a hard sell and not a pressure play.
 
-HARD RULES:
+VOICE:
+- Plain everyday English, simple words, natural flow. Read-aloud test: if you would not say a sentence out loud to a colleague, rewrite it.
+- Open naturally and get to the point in the first sentence. No clever hooks, no fragmented openers.
+- Zero filler, no marketing-speak, no dramatic one-liners.
+- Calm and unhurried. No pushy asks like "yes or no?", no guilt-tripping about the silence.
+- The email is as long as it needs to be to make the point, no longer.
+
+FORMAT (mandatory):
+- Line 1: a greeting (e.g. "Hi <name>," or just "Hi,").
+- Blank line.
+- Body split into short paragraphs by meaning, one idea per paragraph, blank lines between them. Never one big mixed paragraph.
+- Blank line, then the farewell and signature.
+- The FIRST sentence after the greeting must remind them of the earlier email, e.g. "I emailed you a couple of weeks ago about reviewing our Shopify themes and wanted to check back."
+
+CONTENT RULES:
+- Include ONE concrete observation about THIS creator (their channel, platform, or what they review), taken ONLY from the context provided. Never invent facts, names, or numbers.
+- Add exactly ONE new angle versus the first email (for example: we compensate for time, we are happy to hear their rates, full theme access up front).
+- End the body with a clear, simple ask about their rates and formats.
+- Never offer or suggest a call or meeting. Everything happens over email; you may offer help by email ("reply and I'll walk you through it").
 - Never use an em dash character anywhere in the letter.
 - No hype words: exclusive, exciting, game-changer, handpicked, curated, unique opportunity. No corporate slop.
-- Hook in the first 3 words.
-- Include ONE concrete observation about THIS creator (their channel, platform, or what they review), taken ONLY from the context provided. Never invent facts, names, or numbers.
-- Under 120 words total. Honest, direct, human tone. Short sentences.
-- Naturally reference our first email (they already heard from us once).
-- Add exactly ONE new angle versus the first email (for example: we compensate for time, we are happy to hear their rates, full theme access up front).
-- End with a clear, simple ask about their rates and formats.
-- Links allowed ONLY: https://utdweb.team and https://themes.shopify.com/themes?q=UTD. Use at most one link, or none.
+- Whenever you mention a theme by name, include its Theme Store link: Gain https://themes.shopify.com/themes/gain, Ultra https://themes.shopify.com/themes/ultra, Boutique https://themes.shopify.com/themes/boutique, Allure https://themes.shopify.com/themes/allure, Victory https://themes.shopify.com/themes/victory. Other allowed links: https://utdweb.team and https://themes.shopify.com/themes?q=UTD. No other links.
 - Sign off EXACTLY with:
 Best regards,
 Sergey
@@ -307,7 +318,13 @@ def build_user_prompt(cand, correspondence):
 
 _BANNED_WORDS = ["exclusive", "exciting", "game-changer", "game changer",
                  "handpicked", "curated", "unique opportunity"]
-_ALLOWED_LINKS = ("https://utdweb.team", "https://themes.shopify.com/themes?q=UTD")
+_ALLOWED_LINKS = ("https://utdweb.team",
+                  "https://themes.shopify.com/themes?q=UTD",
+                  "https://themes.shopify.com/themes/gain",
+                  "https://themes.shopify.com/themes/ultra",
+                  "https://themes.shopify.com/themes/boutique",
+                  "https://themes.shopify.com/themes/allure",
+                  "https://themes.shopify.com/themes/victory")
 
 
 def validate_draft(text):
@@ -331,9 +348,7 @@ def validate_draft(text):
         if not any(url.rstrip(".,;") == a or url.rstrip(".,;").startswith(a)
                    for a in _ALLOWED_LINKS):
             return ""
-    # Sane length (canon: <120 words; signature adds ~7; hard cap with slack).
-    if len(t.split()) > 170:
-        return ""
+    # No length cap: the email is as long as it needs to be (voice spec 2026-07).
     # Exact signature — append it if the model forgot.
     if "utdweb.team" not in low or "best regards" not in low:
         t = t.rstrip() + "\n\n" + SIGNATURE
