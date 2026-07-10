@@ -95,18 +95,37 @@ _UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
 
 CATALOG = {
     "Impression": {"price": "$340", "link": "https://themes.shopify.com/themes/impression",
-                   "pitch": "flagship premium theme, EU translations, cross-selling, mega menu, size chart, pre-order"},
+                   "pitch": "flagship premium theme, EU translations, cross-selling, mega menu, size chart, pre-order",
+                   "presets": ["Etoile", "Felix", "Mimi", "Reflex"]},
     "Victory": {"price": "$320", "link": "https://themes.shopify.com/themes/victory",
-                "pitch": "built for sports, events and active brands: store locator, event calendar, age verifier, countdowns"},
+                "pitch": "built for sports, events and active brands: store locator, event calendar, age verifier, countdowns",
+                "presets": ["Athletica", "Flip", "Nitro", "Roast"]},
     "Boutique": {"price": "$160", "link": "https://themes.shopify.com/themes/boutique",
-                 "pitch": "made for boutiques and premium brands, elegant product-first layouts"},
+                 "pitch": "made for boutiques and premium brands, elegant product-first layouts",
+                 "presets": ["Aurum", "Jade", "Noom", "Reflections"]},
     "Ultra": {"price": "$100", "link": "https://themes.shopify.com/themes/ultra",
-              "pitch": "multi-purpose workhorse for tech, furniture, auto and toys"},
+              "pitch": "multi-purpose workhorse for tech, furniture, auto and toys",
+              "presets": ["Grace", "Grip", "Harbor", "Sprout"]},
     "Allure": {"price": "$100", "link": "https://themes.shopify.com/themes/allure",
-               "pitch": "versatile and affordable, great for beauty and lifestyle stores"},
+               "pitch": "versatile and affordable, great for beauty and lifestyle stores",
+               "presets": ["Bijou", "Carrara", "Pristine", "Stitch"]},
     "Gain": {"price": "$100", "link": "https://themes.shopify.com/themes/gain",
-             "pitch": "premium minimalist design that keeps the focus on products"},
+             "pitch": "premium minimalist design that keeps the focus on products",
+             "presets": ["Lace", "Maison", "Mio", "Sable"]},
 }
+# Every theme also ships 4 extra ready-made designs (presets), real names above.
+# Preset demo URL pattern: <theme link>/presets/<preset-name-lowercase>
+
+
+def _preset_lines(names):
+    """Render the given themes' presets with their real demo URLs."""
+    out = []
+    for name in names:
+        t = CATALOG[name]
+        pres = ", ".join(
+            p + " (" + t["link"] + "/presets/" + p.lower() + ")" for p in t.get("presets", []))
+        out.append("- " + name + " presets: " + pres)
+    return "\n".join(out)
 
 
 def _tref(name):
@@ -195,31 +214,46 @@ BASE = ("You are Sergey, a normal guy who works at UTD Web, an IT company that "
         "meeting or a calendar link. It is fine to say 'if anything is "
         "unclear, just reply and I will help you set it up'.\n"
         "\n"
-        "VOICE: write like a real person, not a marketer. Plain everyday "
-        "English, simple words, natural flow; every sentence should survive "
-        "being read aloud. Open naturally and get to the point in the first "
-        "sentence. Zero filler, no marketing-speak, no dramatic constructions, "
-        "no hype. Never use an em dash. Forbidden words: exclusive, exciting, "
-        "game-changer, handpicked, curated, unique opportunity. There is no "
-        "length limit: take as much space as the point needs, but make every "
-        "sentence carry information.\n"
+        "VOICE (the most important part): write like a live person dashing "
+        "off a normal work email. Contractions, casual everyday phrasing, "
+        "short natural sentences, a little loose the way real people write "
+        "('honestly', 'quick one', 'worth a look'). It must NOT read like AI "
+        "text, a script, or ad copy. CLARITY ABOVE ALL: each sentence "
+        "instantly understandable on first read. Maximum concreteness, zero "
+        "water. Never use an em dash. Forbidden words: exclusive, exciting, "
+        "game-changer, handpicked, curated, unique opportunity.\n"
         "\n"
-        "THE PAIN IS SALES. The merchant cares about one number: how much the "
-        "store sells. Site speed, page performance, and how products, upsells "
-        "and checkout are laid out all directly move that number, and that is "
-        "the ground you argue on. Connect what you see on THEIR site to lost "
-        "sales, then show that the theme fixes exactly that, and prove it "
-        "with a study or business case woven into the same sentence or the "
-        "next one. The monthly cost of apps is NOT the pain: use it only as "
-        "the value argument, i.e. the theme replaces $15-50/month apps and "
-        "pays for itself, so the price is not a reason to hesitate.\n"
+        "LENGTH AND PARAGRAPHS (hard rules): the whole body stays SHORT, "
+        "roughly 90-150 words. Paragraphs of 1-3 sentences, one idea each, "
+        "blank line between. NEVER a big block of text.\n"
         "\n"
-        "ONE MAIN THEME. Pick the single best-fit theme for this store and "
-        "SELL THAT ONE hard: name it, link it, tie its specific features to "
-        "their specific store, and state plainly that this is the one you "
-        "would put on their store. The remaining themes get ONE short line as "
-        "alternatives at the end, never equal billing, never a five-theme "
-        "pack dump.\n"
+        "THE PAIN IS SALES. Speed, page performance and how products, "
+        "upsells and checkout are laid out move the store's sales; that is "
+        "the ground you argue on. Prove a claim with ONE study or business "
+        "case woven into the same sentence (one short clause, source named), "
+        "never a detached stats paragraph. App costs are only the "
+        "pays-for-itself argument, never the pain.\n"
+        "\n"
+        "ONE MAIN THEME, AND THE RIGHT PRESET. Pick the single best-fit "
+        "theme and sell THAT one: name + link + 1-2 concrete features tied "
+        "to their store. Every theme ships 4 extra ready-made designs "
+        "(presets); when a preset clearly matches the merchant's niche by "
+        "its name and purpose (Roast for coffee, Athletica for sportswear, "
+        "Bijou or Aurum for jewelry, Maison for home goods, Sprout for "
+        "garden/eco, Nitro or Grip for auto and gear), point at that preset "
+        "with its demo link instead of the generic theme demo. Never invent "
+        "visual details of a preset; just say it is the ready-made design "
+        "aimed at that kind of store and give the link. Other themes get "
+        "ONE short line as alternatives, never equal billing.\n"
+        "\n"
+        "ENDING (hard rule): finish with an EASY, harmless way to continue "
+        "the conversation. NEVER ask the merchant about their metrics, "
+        "speed, conversion or anything they will not know off-hand, and no "
+        "provocative questions. Good endings: offer to do something for "
+        "them ('want me to check your store's speed and send you the "
+        "numbers?', 'want me to point out which preset fits your catalog? "
+        "just reply'), or an easy preference question ('which of the two "
+        "looks closer to what you want?').\n"
         "\n"
         "FORMAT, mandatory for EVERY email including follow-up replies:\n"
         "- line 1: a greeting, 'Hi [store or person name] team,' or 'Hi "
@@ -493,39 +527,29 @@ def build_request(c, site_text, history=""):
     if touch == 1:
         sys = (BASE +
                "\n\nThis is the FIRST email, a new thread. Paragraph plan (each "
-               "its own short paragraph):\n"
-               "1. After the greeting: the FIRST sentence says you noticed their "
-               "site runs on Shopify, together with one specific thing you saw "
-               "on it (a product line, a collection, how the catalog is set up). "
-               "Then connect that observation to sales: what in their current "
-               "setup is likely costing them orders (speed, layout, how upsells "
-               "and checkout are arranged).\n"
-               "2. One plain sentence introducing yourself and UTD Web.\n"
-               "3. THE PITCH, the heart of the email: pick THE ONE best theme "
-               "for this store from the top picks below and sell it. Name it "
-               "with its link and price, tie 2-3 of its concrete features to "
-               "what their store needs, state plainly this is the theme you "
-               "would put on their store and that it is built to lift exactly "
-               "the numbers they care about. PROVE the mechanism inside the "
-               "same argument with one study or business case from the "
-               "EVIDENCE ARSENAL (for example: stores that fixed exactly this "
-               "saw real gains, Vodafone sped its pages up 31% and sales rose "
-               "8%). The evidence must sit inside the sales argument, not in a "
-               "separate paragraph. Top picks for their industry:\n" +
-               "\n".join("- " + _tline(n) for n in primary) + "\n"
-               "4. Value line: the theme has upsell, cross-sell and promo "
-               "blocks built in, which replaces $15-50/month apps, so it pays "
-               "for itself. Then point them at the live demo on the theme's "
-               "page: tell them to open a product page and the checkout in the "
-               "demo and see the difference themselves.\n"
-               "5. ONE short line with the alternatives so they know there is "
-               "choice, framed as secondary to your main pick: " +
-               ", ".join(_tref(n) for n in (primary[1:] + alt)) + ". Full "
-               "catalog if they want to browse: " + REGISTRY + ".\n"
-               "6. Close with a question about THEIR situation that starts a "
-               "conversation (what is costing them most sales right now, or "
-               "what they would change first about the store), so the thread "
-               "continues even if they are not ready to buy today.\n"
+               "its own SHORT paragraph, 1-3 sentences):\n"
+               "1. Greeting line, blank line.\n"
+               "2. THEM ONLY: you noticed their site runs on Shopify + one "
+               "specific thing you saw there (a product, a collection, a "
+               "promo they run), said plainly so it is obvious you actually "
+               "looked.\n"
+               "3. US, one or two sentences: I'm Sergey from UTD Web, we make "
+               "Shopify themes, they're on the official Theme Store (" +
+               REGISTRY + ").\n"
+               "4. THE PITCH, 2-3 sentences: the ONE best theme (or its "
+               "best-matching preset) for this store, with link and price, "
+               "1-2 features tied to their store, and one short woven proof "
+               "clause from the EVIDENCE ARSENAL. Candidates:\n" +
+               "\n".join("- " + _tline(n) for n in primary) + "\n" +
+               _preset_lines(primary) + "\n"
+               "5. Value line, 1 sentence: upsells/cross-sells/promo blocks "
+               "are built in, that usually replaces $15-50/month of apps, so "
+               "it pays for itself.\n"
+               "6. Alternatives, 1 short sentence: " +
+               ", ".join(_tref(n) for n in (primary[1:] + alt)) + ".\n"
+               "7. Easy close per the ENDING rule (offer to do something for "
+               "them, or an easy preference question; never ask about their "
+               "numbers).\n"
                "SUBJECT: natural and properly capitalized, naming their niche."
                "\nOutput:\nSUBJECT: [subject]\nBODY:\n[body]")
         user = ("Store: " + store + "\nWebsite: " + c["website"] + "\nIndustry: " +
@@ -537,19 +561,19 @@ def build_request(c, site_text, history=""):
                "have not answered yet). You are shown the previous emails: build "
                "on them, never repeat the same pitch or reuse the same wording.\n"
                "Start with the greeting line, it is mandatory even in a reply. "
-               "The FIRST sentence after the greeting must remind them of the "
-               "previous email, something like 'I emailed you last week about "
-               "themes for your store...'.\n"
-               "Then SELL, do not inform: push the SAME main theme from the "
-               "first email (name + link), from a NEW angle. Make one strong "
-               "claim about what it changes for their sales and prove it in "
-               "the same breath with one study or business case from the "
-               "EVIDENCE ARSENAL, woven into the argument (never a detached "
-               "fact paragraph). Then tell them exactly what to check in the "
-               "live demo to see it for themselves.\n"
-               "Keep the body in short paragraphs by meaning, never one mixed "
-               "block. End with an easy question about their store they can "
-               "answer in one line.\n"
+               "The FIRST sentence after the greeting reminds them of the "
+               "previous email in plain words ('I emailed you last week about "
+               "themes for your store, one more thing worth knowing').\n"
+               "Then ONE new point in 2-3 casual sentences: push the SAME "
+               "main theme (or its matching preset) from the first email, "
+               "name + link, one fresh angle, with one short proof clause "
+               "from the EVIDENCE ARSENAL woven into the sentence itself. "
+               "Sound like a person sharing something useful, not a script.\n"
+               "Then one sentence pointing at the demo (what to open there).\n"
+               "Close per the ENDING rule: offer to do something for them or "
+               "an easy preference question. NEVER ask about their metrics "
+               "or speed.\n"
+               "Total body 60-110 words, paragraphs of 1-3 sentences.\n"
                "SUBJECT: short, natural, properly capitalized (the reply keeps "
                "the thread subject, but output one anyway)."
                "\nOutput:\nSUBJECT: [subject]\nBODY:\n[body]")
@@ -566,21 +590,18 @@ def build_request(c, site_text, history=""):
                "Start with the greeting line, it is mandatory even in a reply. "
                "The FIRST sentence after the greeting must remind them that you "
                "wrote earlier about themes for their store. Calm, never pushy.\n"
-               "The angle of this email is money, argued to a decision: do the "
-               "value math with them. The theme already includes what they pay "
-               "several apps for (upsell, cross-sell, promo blocks; typical "
-               "Shopify apps run $15-50/month each), while the theme is a "
-               "one-time purchase with updates included, so it pays for itself "
-               "within months. Use the actual theme price of your main pick. "
-               "Then close the loop on sales: one piece of evidence from the "
-               "EVIDENCE ARSENAL woven into the argument (Rakuten 24 rebuilt "
-               "around performance and got +33% conversion; that is the "
-               "mechanism this theme gives them). Keep pushing the SAME main "
-               "theme with its link; mention one alternative in a single line "
-               "only if it genuinely fits better for price.\n"
-               "End with a direct but friendly question that helps them decide "
-               "(for example whether they want to try the main pick on their "
-               "store, reminding them you will help by email with the setup).\n"
+               "The angle of this email is money, said simply: the theme "
+               "already includes what stores usually pay apps for (upsells, "
+               "cross-sells, promo blocks, $15-50/month each), and it is a "
+               "one-time price with updates included, so it pays for itself "
+               "in a few months. Use the actual price of the main pick, keep "
+               "its link. One short woven proof clause from the EVIDENCE "
+               "ARSENAL max. Casual human wording, 2-3 sentences per "
+               "paragraph.\n"
+               "Close per the ENDING rule: friendly, decision-helping, "
+               "email-only ('happy to help you set it up over email'), never "
+               "a question about their numbers.\n"
+               "Total body 60-110 words.\n"
                "SUBJECT: short, natural, properly capitalized."
                "\nOutput:\nSUBJECT: [subject]\nBODY:\n[body]")
         user = ("Store: " + store + "\nIndustry: " + c["industry"] + "\nTop themes: " +
