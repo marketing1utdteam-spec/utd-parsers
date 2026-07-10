@@ -75,6 +75,14 @@ def send_email(account, to, subject, body,
     else:
         to_list = [to]
 
+    # TEST_RECIPIENT safety valve: when set, EVERY email from EVERY module is
+    # redirected to this address, with the original recipient noted in the
+    # subject. Lets us do live end-to-end tests without emailing real leads.
+    test_rcpt = os.environ.get("TEST_RECIPIENT", "").strip()
+    if test_rcpt:
+        subject = "[TEST → %s] %s" % (", ".join(to_list), subject)
+        to_list = [test_rcpt]
+
     # Decide plain vs HTML. If caller passed html=..., use it; else auto-detect.
     if html is None and _looks_html(body):
         html = body

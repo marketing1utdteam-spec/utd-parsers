@@ -90,8 +90,11 @@ EXPECTED_COLUMNS = [
 ROUTE_OUTPUTS = ["respond", "escalate", "decline", "bounce", "send_failed"]
 
 # ── In-run caches (populated once per run; NO per-email Sheets calls) ──
+# _THREAD_CACHE: {(account_user, gm_thrid): history_text} so each Gmail thread
+# is fetched at most once per run (same pattern as agency_autoresponder).
 _SHEET = {"ws": None, "header": [], "email_to_row": {}}
 _PENDING = {}
+_THREAD_CACHE = {}
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -102,10 +105,10 @@ MODEL = "claude-sonnet-5"
 MAX_TOKENS = 1000
 
 SYSTEM_PROMPT = (
-"You are Sergey from UTD Web replying to a Shopify store owner who answered our cold email about UTD themes. UTD themes (official Shopify Theme Store, developer UTD Web, links https://themes.shopify.com/themes?q=UTD and https://utdweb.team/shopify-themes): 6 theme families, 30 presets. Impression $340 (premium flagship, EU translations, cross-sell, mega menu, size chart, pre-order). Victory $320 (sports/events/active: store locator, event calendar, age verifier, countdowns). Boutique $160 (boutiques/premium brands). Ultra $100 (tech/furniture/auto/toys). Allure $100 (beauty/lifestyle). Gain $100 (minimalist). All themes: built-in upsells, cross-sells, promo sections (reduce need for paid apps); EU translations; preview before publish; products stay in place when switching. Themes are bought on the official Shopify Theme Store; UTD can help with setup and customization on request.\n\n"
-"Answer their questions accurately using ONLY these facts, and gently move them toward trying one theme that fits their store (use the themes we already suggested if provided). Do not invent features, prices or promises. Do not offer discounts. If they ask about custom development, a call at a specific time, contracts, or anything not covered here, do NOT answer, mark escalate.\n\n"
+"You are Sergey from UTD Web replying to a Shopify store owner who answered our cold email about UTD themes. UTD themes (official Shopify Theme Store, developer UTD Web, links https://themes.shopify.com/themes?q=UTD and https://utdweb.team): 6 theme families, 30 presets. Impression $340 (premium flagship, EU translations, cross-sell, mega menu, size chart, pre-order). Victory $320 (sports/events/active: store locator, event calendar, age verifier, countdowns). Boutique $160 (boutiques/premium brands). Ultra $100 (tech/furniture/auto/toys). Allure $100 (beauty/lifestyle). Gain $100 (minimalist). All themes: built-in upsells, cross-sells, promo sections (reduce need for paid apps); EU translations; preview before publish; products stay in place when switching. Themes are bought on the official Shopify Theme Store; UTD can help with setup and customization on request.\n\n"
+"FUNNEL GOAL: move this merchant toward CHOOSING AND BUYING one UTD theme. Read the thread history: figure out which theme they lean to (or use the themes we already suggested), and if it is unclear, ask directly which theme fits their store. Argue benefits concretely against their situation: built-in conversion features replace paid apps (saves monthly app fees), fast themes, EU translations, official Shopify Theme Store status means a safe purchase (preview before publish, products stay in place). Answer their questions accurately using ONLY the facts above. Do not invent features, prices or numbers. Do not offer discounts. If they ask about custom development, a call at a specific time, contracts, or anything not covered here, do NOT answer, mark escalate.\n\n"
 "Return STRICT JSON: {\"category\":\"interested|question|decline|spam|escalate\",\"note\":\"<short RU>\",\"reply_body\":\"<reply or empty>\"}\n"
-"- interested/question: write the reply. Under 150 words, English, human, no em dashes, no hype. Recommend a specific theme with one concrete reason. End with:\n"
+"- interested/question: write the reply. Under 120 words, in the LANGUAGE of the incoming email. Hook in the first 3 words; lead with a concrete fact or answer, never a generic compliment. Human, no hype, no corporate slop. Never use an em dash. Forbidden words: exclusive, exciting, game-changer, handpicked, curated, unique opportunity. The only links allowed: https://utdweb.team and https://themes.shopify.com/themes?q=UTD. Build on the thread history, never repeat what was already said. Recommend a specific theme with one concrete reason and end by moving them a step closer to buying (e.g. which theme they want to go with, or offer a demo/preview of the exact theme). End with exactly:\n"
 "Best regards,\n"
 "Sergey\n"
 "UTD Web | utdweb.team\n"
@@ -115,17 +118,58 @@ SYSTEM_PROMPT = (
 )
 
 
-def build_user_prompt(msg, store, industry, suggested):
-    """VERBATIM from «Собрать запрос»: the user message fed to Claude."""
+def build_user_prompt(msg, store, industry, suggested, history=""):
+    """The user message fed to Claude. Now carries the FULL prior thread
+    (fetched over IMAP via fetch_thread) so the reply builds on what was
+    already said instead of re-pitching from scratch."""
     return (
         "Incoming reply:\n"
         "From: " + msg["from"] + "\n"
         "Store: " + (store or "?") + "\n"
         "Industry: " + (industry or "?") + "\n"
         "Themes we suggested: " + (suggested or "?") + "\n\n"
-        "Body:\n" + msg["body"] + "\n\n"
-        "Classify and reply. Output ONLY JSON."
+        "Previous emails in this thread (oldest first):\n" +
+        (history or "(no prior history found)") + "\n\n"
+        "Latest incoming message body:\n" + msg["body"] + "\n\n"
+        "Classify and reply, building on the thread above. Output ONLY JSON."
     )
+
+
+def format_thread_history(thread, budget=4000):
+    """Render a fetch_thread() list into a compact chronology for the model
+    (oldest first), trimmed to ~`budget` chars total."""
+    if not thread:
+        return ""
+    lines = []
+    for m in thread:
+        who = "UTD (us)" if m.get("direction") == "sent" else "Merchant"
+        snippet = (m.get("snippet") or "").strip()
+        lines.append("- [%s] %s: %s" % (str(m.get("date", ""))[:10], who, snippet))
+    return "\n".join(lines)[:budget]
+
+
+def get_thread_history(account, msg, contact):
+    """Fetch the whole Gmail conversation for this message (both directions),
+    at most once per thread per run. Thread id: the message's X-GM-THRID first,
+    then the CRM row's Thread ID when numeric. '' when nothing can be fetched."""
+    thrid = str(msg.get("gm_thrid", "") or "").strip()
+    if not thrid and contact:
+        t = str(contact.get("thread", "") or "").strip()
+        if t.isdigit():
+            thrid = t
+    if not thrid:
+        return ""
+    cache_key = (account["user"], thrid)
+    if cache_key in _THREAD_CACHE:
+        return _THREAD_CACHE[cache_key]
+    history = ""
+    try:
+        history = format_thread_history(
+            ec.fetch_thread(account, thrid, OWN_ADDRESSES))
+    except Exception as e:
+        print(f"  (thread fetch failed, using single message: {e})")
+    _THREAD_CACHE[cache_key] = history
+    return history
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -213,6 +257,18 @@ def match_contact(msg, by_email, by_thread):
 def _reply_subject(subject):
     s = subject or ""
     return s if s.lower().startswith("re:") else "Re: " + s
+
+
+def _print_prompt(system, user):
+    """DRY_RUN: dump the FULL Claude prompt (system + user), clearly delimited,
+    BEFORE the call — so a dry run shows exactly what the model will get."""
+    print("\n" + "-" * 70)
+    print("[CLAUDE PROMPT · DRY_RUN]")
+    print("--- SYSTEM " + "-" * 59)
+    print(system)
+    print("--- USER " + "-" * 61)
+    print(user)
+    print("--- END PROMPT " + "-" * 55)
 
 
 def _print_draft(kind, account, to, subject, body):
@@ -328,10 +384,21 @@ def process_message(account, msg, by_email, by_thread, state, stats):
         store = contact["store"] if contact else ""
         industry = contact["industry"] if contact else ""
         suggested = contact["suggested"] if contact else ""
-        user = build_user_prompt(msg, store, industry, suggested)
+        # Pull the WHOLE thread (both directions) so the model reads the real
+        # history, not just this one inbound email (agency_autoresponder pattern).
+        history = get_thread_history(account, msg, contact)
+        user = build_user_prompt(msg, store, industry, suggested, history)
+        if DRY_RUN:
+            _print_prompt(SYSTEM_PROMPT, user)
         # Gentle pacing between Claude calls to avoid 429 on big batches.
         time.sleep(0.7)
         ai_text = ec.call_claude(SYSTEM_PROMPT, user, model=MODEL, max_tokens=MAX_TOKENS)
+        if not (ai_text or "").strip():
+            # Transient API failure / no key: leave the email for the next run
+            # (NOT marked processed) instead of mis-escalating it.
+            print(f"\n· {account['user']} ← {msg['from_email']} | {msg['subject'][:60]!r}")
+            print("  [claude unavailable -> fallback/skip]")
+            return
         decision = parse_ai_result(ai_text)
 
     # «Маршрут» switch: a category not in ROUTE_OUTPUTS falls to the ignore output.
@@ -378,6 +445,7 @@ def run_once():
 
     # Reset in-run caches / pending writes.
     _PENDING.clear()
+    _THREAD_CACHE.clear()
     _SHEET["ws"] = None
     _SHEET["header"] = []
     _SHEET["email_to_row"] = {}

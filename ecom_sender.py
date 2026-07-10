@@ -32,6 +32,7 @@ import os
 import re
 import json
 import random
+import imaplib
 from datetime import datetime, timezone
 
 import email_common as ec
@@ -61,6 +62,15 @@ ACCOUNT = {
 }
 # Gmail "From" display name used by the n8n Gmail node (senderName).
 SENDER_NAME = "Sergey | UTD Web"
+
+# Our own mailbox addresses — used to tag directions when reading the thread
+# back over IMAP (fetch_thread marks messages from these as 'sent').
+OWN_ADDRESSES = [a for a in (
+    os.environ.get("UTD_MAIL_SERGEY", ""),
+    os.environ.get("UTD_MAIL_SERGI", ""),
+    os.environ.get("UTD_MAIL_SERGE", ""),
+    os.environ.get("UTD_MAIL_SERHII", ""),
+) if a]
 
 _STATE_DIR = os.environ.get("STATE_DIR", ".")
 STATE_FILE = os.path.join(_STATE_DIR, "ecom_sender_state.json")
@@ -108,14 +118,24 @@ MAP = {
 }
 
 REGISTRY = "https://themes.shopify.com/themes?q=UTD"
-SITE = "https://utdweb.team/shopify-themes/"
+SITE = "https://utdweb.team"
 
 BASE = ("You are Sergey from UTD Web, an official Shopify Theme Store developer "
         "(6 theme families, built-in conversion features: upsells, cross-sells, "
-        "promo sections). You write to the owner of a real Shopify store. Tone: "
-        "human, specific, no hype, no em dashes, never disparage their current "
-        "theme, never invent features/stats. No words: exclusive, exciting, "
-        "game-changer, unique opportunity. NO signature (added separately).")
+        "promo sections). You write to the owner of a real Shopify store. "
+        "GOAL: move the merchant toward choosing and buying the UTD theme that "
+        "fits their store. Concrete benefits to lean on: conversion features "
+        "built in (fewer paid apps), fast themes, official Shopify Theme Store "
+        "status (safe purchase, preview before publish, products stay in place). "
+        "STYLE: human and specific. Hook in the first 3 words. Lead with a "
+        "concrete observation or fact, never a generic compliment. No hype, no "
+        "corporate slop. Never use an em dash. Forbidden words: exclusive, "
+        "exciting, game-changer, handpicked, curated, unique opportunity. "
+        "Never invent features, prices or numbers; use only the facts given "
+        "here. Never disparage their current theme. The only links allowed: " +
+        SITE + " and " + REGISTRY + ". Write in English unless the merchant "
+        "wrote to us in another language in this thread, then use their "
+        "language. NO signature (it is added separately).")
 
 MODEL = "claude-sonnet-5"
 MAX_TOKENS = 900
@@ -193,6 +213,8 @@ def select_leads(rows):
             "suggested": str(r.get("Suggested Themes", "")).strip(),
             "thread_id": str(r.get("Thread ID", "")).strip(),
             "last_msg": str(r.get("Last Msg ID", "")).strip(),
+            "status": st,
+            "date_sent": str(r.get("Date Sent", "")).strip(),
             "row_number": i,
         })
     if not elig:
@@ -234,12 +256,127 @@ def fetch_site_text(url):
 
 
 # ═══════════════════════════════════════════════════════════════════
-#   BUILD CLAUDE REQUEST  (verbatim per-touch prompts)
+#   THREAD CONTEXT  (touches 2-4: feed Claude the ACTUAL prior emails)
 # ═══════════════════════════════════════════════════════════════════
 
-def build_request(c, site_text):
-    """Return (system, user, primary, alt) for the contact's touch — the exact
-    strings assembled by the n8n «Build Claude Request» node."""
+def _resolve_gm_thrid(account, thread_ref):
+    """Turn the sheet's Thread ID value into a numeric Gmail thread id.
+
+    The column may hold either a numeric X-GM-THRID (n8n era) or the RFC
+    Message-ID of our first send (this sender writes sent_msg_id there).
+    A Message-ID is resolved with ONE IMAP search in All Mail; '' on failure."""
+    ref = (thread_ref or "").strip()
+    if not ref:
+        return ""
+    if ref.isdigit():
+        return ref
+    if "@" not in ref:
+        return ""
+    mid = ref if ref.startswith("<") else "<%s>" % ref
+    M = imaplib.IMAP4_SSL(ec.IMAP_HOST, ec.IMAP_PORT)
+    try:
+        M.login(account["user"], account["password"])
+        for box in ("[Gmail]/All Mail", "[Google Mail]/All Mail"):
+            typ, _ = M.select(box, readonly=True)
+            if typ == "OK":
+                break
+        else:
+            return ""
+        typ, data = M.uid("SEARCH", None, "HEADER", "Message-ID", '"%s"' % mid)
+        if typ != "OK" or not data or not data[0]:
+            return ""
+        uid = data[0].split()[0]
+        typ, md = M.uid("FETCH", uid, "(X-GM-THRID)")
+        if typ != "OK" or not md or not md[0]:
+            return ""
+        meta = md[0][0] if isinstance(md[0], tuple) else md[0]
+        return ec._gm_thrid_from_fetch(meta)
+    except Exception:
+        return ""
+    finally:
+        try:
+            M.close()
+        except Exception:
+            pass
+        try:
+            M.logout()
+        except Exception:
+            pass
+
+
+def format_thread_history(thread, budget=1500):
+    """Render a fetch_thread() list into a compact chronology for the model,
+    trimmed to ~`budget` chars total (oldest first, like agency_autoresponder)."""
+    if not thread:
+        return ""
+    per = max(160, budget // max(len(thread), 1) - 40)
+    lines = []
+    for m in thread:
+        who = "UTD (us)" if m.get("direction") == "sent" else "Merchant"
+        snippet = (m.get("snippet") or "").strip()[:per]
+        lines.append("- [%s] %s: %s" % (str(m.get("date", ""))[:10], who, snippet))
+    return "\n".join(lines)[:budget]
+
+
+def summarize_prior_touches(c):
+    """Structured fallback when the real thread cannot be fetched: reconstruct
+    what each earlier touch said from the touch templates + the row state
+    (Suggested Themes / Status / Date Sent)."""
+    themes = c.get("suggested") or "the themes recommended for their industry"
+    sums = {
+        1: ("Touch 1 (first cold email): one specific observation about their "
+            "store, introduced UTD Web (official Shopify Theme Store developer, "
+            "conversion features built in), recommended these themes for their " +
+            (c.get("industry") or "niche") + " niche with prices: " + themes +
+            ". Shared the catalog links and offered questions or a demo store."),
+        2: ("Touch 2 (short bump in the same thread): lightly referenced the "
+            "first note, offered to send a live demo store of the best-fit "
+            "theme, asked if they had questions."),
+        3: ("Touch 3 (value follow-up): explained UTD themes ship with upsells, "
+            "cross-sells and promo sections built in (usually fewer paid apps), "
+            "switching is low-risk (preview before publish, products stay in "
+            "place), re-named the top themes: " + themes + "."),
+    }
+    lines = [sums[t] for t in range(1, c["touch"]) if t in sums]
+    tail = "The merchant has not replied so far."
+    if c.get("date_sent"):
+        tail = ("Last email sent " + c["date_sent"] +
+                " (CRM status '" + (c.get("status") or "") + "'). " + tail)
+    lines.append(tail)
+    return "\n".join(lines)
+
+
+def build_thread_context(c):
+    """Prior correspondence for touches 2-4. Prefers the ACTUAL thread over
+    IMAP (needs the Gmail app-password + a Thread ID on the row, ~1500 chars);
+    falls back to a structured summary of the earlier touches."""
+    history = ""
+    if ACCOUNT.get("user") and ACCOUNT.get("password") and c.get("thread_id"):
+        try:
+            thrid = _resolve_gm_thrid(ACCOUNT, c["thread_id"])
+            if thrid:
+                history = format_thread_history(
+                    ec.fetch_thread(ACCOUNT, thrid, OWN_ADDRESSES))
+        except Exception as e:
+            print(f"  (thread fetch failed, using structured summary: {e})")
+    if history:
+        print("  [THREAD] using actual prior emails from IMAP "
+              f"({len(history)} chars)")
+    else:
+        history = summarize_prior_touches(c)
+        print("  [THREAD] IMAP unavailable/empty → structured summary of "
+              "earlier touches")
+    return history
+
+
+# ═══════════════════════════════════════════════════════════════════
+#   BUILD CLAUDE REQUEST  (per-touch prompts; 2-4 carry the prior thread)
+# ═══════════════════════════════════════════════════════════════════
+
+def build_request(c, site_text, history=""):
+    """Return (system, user, primary, alt) for the contact's touch. Touches
+    2-4 embed `history` (the actual prior emails, or the structured summary)
+    so the letter builds on what was already said instead of repeating it."""
     order = MAP.get(c["industry"]) or ["Impression", "Ultra", "Allure", "Gain", "Victory"]
     primary, alt = order[:3], order[3:5]
 
@@ -266,33 +403,46 @@ def build_request(c, site_text):
     elif touch == 2:
         sys = (BASE +
                "\n\nSECOND email, a short follow-up in the SAME thread (no reply yet). "
-               "60-90 words. Reference the first note lightly, do not repeat the full "
-               "pitch. Offer to send a live demo store of the best-fit theme for their "
-               "niche, and ask if they had any questions. One theme name max. No subject "
-               "needed (reply keeps thread subject) but still output SUBJECT line as short."
+               "60-90 words, hard cap 120. You are shown the previous emails in this "
+               "thread: BUILD on them, never repeat the same pitch or reuse the same "
+               "wording. Reference the first note lightly. Offer to send a live demo "
+               "store of the best-fit theme for their niche, and ask if they had any "
+               "questions. One theme name max. No subject needed (reply keeps thread "
+               "subject) but still output SUBJECT line as short."
                "\nOutput:\nSUBJECT: [short]\nBODY:\n[body]")
         user = ("Store: " + store + "\nIndustry: " + c["industry"] +
                 "\nThemes we suggested earlier: " + (c["suggested"] or ", ".join(primary)) +
-                "\n\nWrite a short bump.")
+                "\n\nPrevious emails in this thread:\n" + (history or "(unavailable)") +
+                "\n\nWrite a short bump that builds on the thread above without "
+                "repeating it.")
     elif touch == 3:
         sys = (BASE +
-               "\n\nTHIRD email, follow-up in the same thread. 70-110 words. Different "
-               "angle: focus on ONE concrete value point relevant to their store, that "
-               "UTD themes have conversion features built in (upsells, cross-sells, promo "
-               "sections) which usually cut spend on extra apps, and switching a theme is "
-               "low-risk (preview before publish, products stay). Re-name the top 2 themes "
-               "for their niche. End with a light question."
+               "\n\nTHIRD email, follow-up in the same thread. 70-110 words, hard cap "
+               "120. You are shown the previous emails in this thread: take a DIFFERENT "
+               "angle from both earlier notes, never repeat what was already said. Focus "
+               "on ONE concrete value point relevant to their store: UTD themes have "
+               "conversion features built in (upsells, cross-sells, promo sections) "
+               "which usually cut spend on extra apps, and switching a theme is low-risk "
+               "(preview before publish, products stay). Re-name the top 2 themes for "
+               "their niche. End with a light question that nudges them to pick a theme."
                "\nOutput:\nSUBJECT: [short]\nBODY:\n[body]")
         user = ("Store: " + store + "\nIndustry: " + c["industry"] + "\nTop themes: " +
-                (c["suggested"] or ", ".join(primary)) + "\n\nWrite the value follow-up.")
+                (c["suggested"] or ", ".join(primary)) +
+                "\n\nPrevious emails in this thread:\n" + (history or "(unavailable)") +
+                "\n\nWrite the value follow-up. It must add something new versus the "
+                "thread above.")
     else:
         sys = (BASE +
                "\n\nFOURTH and final email, a polite breakup in the same thread. 45-70 "
-               "words. Say you will assume the timing is not right and will not keep "
-               "following up, leave the catalog link " + REGISTRY + " for whenever it "
-               "fits, wish them well. Warm, no guilt, no pressure."
+               "words, hard cap 120. You are shown the previous emails in this thread: "
+               "acknowledge the sequence naturally, do not re-pitch and do not repeat "
+               "earlier lines. Say you will assume the timing is not right and will not "
+               "keep following up, leave the catalog link " + REGISTRY + " for whenever "
+               "it fits, wish them well. Warm, no guilt, no pressure."
                "\nOutput:\nSUBJECT: [short]\nBODY:\n[body]")
-        user = ("Store: " + store + "\n\nWrite the breakup email.")
+        user = ("Store: " + store +
+                "\n\nPrevious emails in this thread:\n" + (history or "(unavailable)") +
+                "\n\nWrite the breakup email.")
 
     return sys, user, primary, alt
 
@@ -368,6 +518,18 @@ def parse_email(c, ai_text, primary, alt):
 
 # n8n «Update Sheet» writes these columns (matched by row_number).
 SHEET_WRITE_COLS = ("Status", "Date Sent", "Thread ID", "Last Msg ID", "Suggested Themes")
+
+
+def _print_prompt(system, user):
+    """DRY_RUN: dump the FULL Claude prompt (system + user), clearly delimited,
+    BEFORE the call — so a dry run shows exactly what the model will get."""
+    print("\n" + "-" * 70)
+    print("[CLAUDE PROMPT · DRY_RUN]")
+    print("--- SYSTEM " + "-" * 59)
+    print(system)
+    print("--- USER " + "-" * 61)
+    print(user)
+    print("--- END PROMPT " + "-" * 55)
 
 
 def _print_draft(payload, mode):
@@ -495,8 +657,15 @@ def run_once():
         selected += 1
 
         site_text = fetch_site_text(c["website"]) if c["touch"] == 1 else ""
-        sys, user, primary, alt = build_request(c, site_text)
+        # Touches 2-4: pull the ACTUAL prior correspondence (or a structured
+        # summary) so the letter builds on what was already said.
+        history = build_thread_context(c) if c["touch"] > 1 else ""
+        sys, user, primary, alt = build_request(c, site_text, history)
+        if DRY_RUN:
+            _print_prompt(sys, user)
         ai_text = ec.call_claude(sys, user, model=MODEL, max_tokens=MAX_TOKENS)
+        if not ai_text:
+            print("[claude unavailable -> fallback/skip]")
         payload = parse_email(c, ai_text, primary, alt)
 
         print(f"\n· touch {payload['touch']} → {payload['email']} | "

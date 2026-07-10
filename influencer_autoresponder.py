@@ -123,10 +123,13 @@ PRICING_COL_BY_KEY = {
 }
 
 # ── In-run caches (populated once per run; NO per-email Sheets calls) ──
+# _THREAD_CACHE: {(account_user, gm_thrid): history_text} so each Gmail thread
+# is fetched at most once per run (same pattern as agency_autoresponder).
 _CONTACTS = {"ws": None, "header": [], "email_to_row": {}}
 _PRICING = {"ws": None, "header": [], "email_to_row": {}}
 _PENDING_CONTACTS = {}   # {email_lower: {"Status": value}}
 _PENDING_PRICING = {}    # {email_lower: {column_name: value}}
+_THREAD_CACHE = {}
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -135,7 +138,7 @@ _PENDING_PRICING = {}    # {email_lower: {column_name: value}}
 
 SYSTEM_PROMPT = (
 "You are Sergey, a partnerships manager at UTD Web (utdweb.team), talking with a content creator or influencer who replied to our outreach about a collaboration around UTD, a studio with 25 Shopify themes on the official Shopify Theme Store (https://themes.shopify.com/themes?q=UTD). Instagram: @utd_web_team.\n\n"
-"YOUR GOAL: find out which content formats this creator actually offers (their platforms differ: some are YouTube channels, some are blogs only, some are Instagram or TikTok), then collect their rates for EVERY format they offer, from this menu:\n"
+"YOUR GOAL (the funnel): collect this creator's FULL rate card. Find out which content formats they actually offer (their platforms differ: some are YouTube channels, some are blogs only, some are Instagram or TikTok), then collect their rates for EVERY format they offer, from this menu:\n"
 "- dedicated article or blog post about UTD\n"
 "- dedicated YouTube video about UTD\n"
 "- mention or integration of UTD inside one of their regular videos\n"
@@ -154,7 +157,7 @@ SYSTEM_PROMPT = (
 "- decline: not interested or asks to stop. reply_body empty.\n"
 "- spam: unrelated or automated mail. reply_body empty.\n"
 "- escalate: contracts, calls with specific times, legal or payment questions, aggressive negotiation, whitelabel or revenue-share partnership proposals, paid research platforms, or anything you cannot answer from the facts above. reply_body empty.\n\n"
-"REPLY RULES: reply in the language of the incoming email. Under 150 words. Friendly, human, creator-outreach tone, no corporate stiffness, no hype words. Never use em dashes. When asking for rates, ask as a short list. End with:\n"
+"REPLY RULES: reply in the LANGUAGE of the incoming email. Under 120 words. Hook in the first 3 words; open with a concrete fact or answer, never a generic compliment. Friendly, human, creator-outreach tone, no corporate slop, no hype. Never use an em dash. Forbidden words: exclusive, exciting, game-changer, handpicked, curated, unique opportunity. Never invent features, prices or numbers. The only links allowed: https://utdweb.team and https://themes.shopify.com/themes?q=UTD. Build on the thread history provided, never repeat a question they already answered and never re-send the same pitch. When asking for rates, ask as a short list. End with exactly:\n"
 "Best regards,\n"
 "Sergey\n"
 "UTD Web | utdweb.team\n\n"
@@ -162,8 +165,10 @@ SYSTEM_PROMPT = (
 )
 
 
-def build_user_prompt(msg, contact_name, collected):
-    """Verbatim reproduction of the n8n user-message assembly.
+def build_user_prompt(msg, contact_name, collected, history=""):
+    """The user message fed to Claude. Now carries the FULL prior thread
+    (fetched over IMAP via fetch_thread) so the reply builds on what was
+    already said and never re-asks answered questions.
     collected is serialized with JS JSON.stringify semantics (no spaces)."""
     col_json = json.dumps(collected, ensure_ascii=False, separators=(",", ":"))
     return (
@@ -172,9 +177,47 @@ def build_user_prompt(msg, contact_name, collected):
         "Subject: " + (msg.get("subject", "") or "") + "\n"
         "Creator (from CRM): " + (contact_name or "(unknown)") + "\n\n"
         "ALREADY COLLECTED: " + col_json + "\n\n"
-        "Body:\n" + (msg.get("body", "") or "") + "\n\n"
-        "Classify, extract data, draft the reply. Output ONLY the JSON object."
+        "Previous emails in this thread (oldest first):\n" +
+        (history or "(no prior history found)") + "\n\n"
+        "Latest incoming message body:\n" + (msg.get("body", "") or "") + "\n\n"
+        "Classify, extract data, draft the reply building on the thread above. "
+        "Output ONLY the JSON object."
     )
+
+
+def format_thread_history(thread, budget=4000):
+    """Render a fetch_thread() list into a compact chronology for the model
+    (oldest first), trimmed to ~`budget` chars total."""
+    if not thread:
+        return ""
+    lines = []
+    for m in thread:
+        who = "UTD (us)" if m.get("direction") == "sent" else "Creator"
+        snippet = (m.get("snippet") or "").strip()
+        atts = m.get("attachment_names") or []
+        att_note = (" | attachments: " + ", ".join(atts)) if atts else ""
+        lines.append("- [%s] %s: %s%s" % (str(m.get("date", ""))[:10], who,
+                                          snippet, att_note))
+    return "\n".join(lines)[:budget]
+
+
+def get_thread_history(account, msg):
+    """Fetch the whole Gmail conversation for this message (both directions)
+    via X-GM-THRID, at most once per thread per run. '' when unavailable."""
+    thrid = str(msg.get("gm_thrid", "") or "").strip()
+    if not thrid:
+        return ""
+    cache_key = (account["user"], thrid)
+    if cache_key in _THREAD_CACHE:
+        return _THREAD_CACHE[cache_key]
+    history = ""
+    try:
+        history = format_thread_history(
+            ec.fetch_thread(account, thrid, OWN_ADDRESSES))
+    except Exception as e:
+        print(f"  (thread fetch failed, using single message: {e})")
+    _THREAD_CACHE[cache_key] = history
+    return history
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -326,6 +369,18 @@ def pre_classify(msg):
 def _reply_subject(subject):
     s = subject or ""
     return s if s.lower().startswith("re:") else "Re: " + s
+
+
+def _print_prompt(system, user):
+    """DRY_RUN: dump the FULL Claude prompt (system + user), clearly delimited,
+    BEFORE the call — so a dry run shows exactly what the model will get."""
+    print("\n" + "-" * 70)
+    print("[CLAUDE PROMPT · DRY_RUN]")
+    print("--- SYSTEM " + "-" * 59)
+    print(system)
+    print("--- USER " + "-" * 61)
+    print(user)
+    print("--- END PROMPT " + "-" * 55)
 
 
 def _print_draft(kind, account, to, subject, body):
@@ -488,13 +543,19 @@ def process_message(account, msg, by_thread, by_email, pricing_by_email, state, 
     if pre != "human":
         decision = non_ai_result(pre)
     else:
-        user = build_user_prompt(msg, contact_name, collected)
+        # Pull the WHOLE thread (both directions) so the model reads the real
+        # history, not just this one inbound email (agency_autoresponder pattern).
+        history = get_thread_history(account, msg)
+        user = build_user_prompt(msg, contact_name, collected, history)
+        if DRY_RUN:
+            _print_prompt(SYSTEM_PROMPT, user)
         time.sleep(0.7)  # gentle pacing to avoid 429 on big batches
         ai_text = ec.call_claude(SYSTEM_PROMPT, user, model="claude-sonnet-5",
                                  max_tokens=1400)
         decision = parse_ai_result(ai_text, collected)
         if decision is None:
             print(f"\n· {account['user']} ← {msg['from_email']} | {msg['subject'][:60]!r}")
+            print("  [claude unavailable -> fallback/skip]")
             print("  UNDECIDED (empty AI response) → left for next run, not marked processed.")
             return
 
@@ -556,6 +617,7 @@ def run_once():
     # Reset in-run caches / pending writes.
     _PENDING_CONTACTS.clear()
     _PENDING_PRICING.clear()
+    _THREAD_CACHE.clear()
     for cache in (_CONTACTS, _PRICING):
         cache["ws"] = None
         cache["header"] = []

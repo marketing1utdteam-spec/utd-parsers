@@ -1,42 +1,50 @@
 #!/usr/bin/env python3
 """
-b2b_followup.py — UTD "Referral program" B2B follow-up sender.
+b2b_followup.py — UTD "Referral program" B2B follow-up sender (Claude-first).
 
-Faithful Python port of the n8n workflow B2B_followup (HhCE6aXjSRhUJX27) for
-GitHub Actions. Once a day it finds contacts that were emailed ("Sent") more
-than 7 days ago and never replied, sends ONE fixed follow-up email, and marks
-the row "Follow-up Sent".
+Evolution of the n8n workflow B2B_followup (HhCE6aXjSRhUJX27) for GitHub
+Actions. Once a day it finds contacts that were emailed ("Sent") more than
+7 days ago and never replied, asks Claude to write a SHORT personalized
+follow-up (grounded in a fresh site scrape + the actual prior correspondence
+pulled over IMAP when available), sends it IN-THREAD when the row has a
+Thread ID, and marks the row "Follow-up Sent".
 
-n8n → Python node mapping:
-  Get All Contacts              → ec.open_worksheet + ec.read_rows_ws (ONE read)
+Pipeline per contact:
+  Get All Contacts                → ec.open_worksheet + ec.read_rows_ws (ONE read)
   Find Contacts Needing Follow-Up → find_needing_followup()  (Status 'Sent',
-                                   valid email, not competitor, Date Sent < now-7d)
-  Build Follow-Up Email         → build_followup_email()  (fixed body, no AI)
-  Send Follow-Up Email          → ec.send_email()
-  Mark as Follow-Up Sent        → Status "Follow-up Sent" / Date Sent, match Email
-  Daily at 9 AM                 → one follow-up per run (see B2B_FOLLOWUP_LIMIT)
-
-There is NO Claude call in the n8n follow-up chain — the body is a static
-template — so this module sends it verbatim (no ANTHROPIC_API_KEY needed to run,
-though the shared config still reads it for parity with the sender).
+                                    valid email, not competitor, Date Sent < now-7d)
+  Assemble Context                → fresh site scrape (b2b_sender helper) +
+                                    prior thread via ec.fetch_thread (IMAP,
+                                    Message-ID → X-GM-THRID resolve) or a
+                                    faithful summary when IMAP is unavailable
+  Claude — Write Follow-Up        → ec.call_claude (claude-sonnet-5, 700 tok)
+                                    canon: under 120 words, hook first, ONE new
+                                    angle, no em dashes, no hype, clear ask
+  Fallback                        → static template body when Claude fails
+  Send Follow-Up Email            → ec.send_email (in-thread reply when the
+                                    row has a Thread ID, else "Re: <subject>")
+  Mark as Follow-Up Sent          → Status "Follow-up Sent" / Date Sent
 
 Safety:
-  • DRY_RUN=true (default) prints the drafted email + intended sheet writes and
-    does NOT send or write.
-  • Followed-up emails are SHA256-hashed into data/b2b_followup_state.json so the
-    same lead is never followed up twice.
+  • DRY_RUN=true (default) prints the FULL built Claude system+user prompt,
+    the drafted email and intended sheet writes, and does NOT send or write.
+  • Followed-up emails are SHA256-hashed into data/b2b_followup_state.json so
+    the same lead is never followed up twice.
 
 Usage:  python b2b_followup.py
-Env:    GOOGLE_CREDENTIALS_JSON, GMAIL_APP_PW_SERGEY, B2B_SHEET_ID,
-        B2B_SHEET_TAB, DRY_RUN, B2B_FOLLOWUP_LIMIT, STATE_DIR
-        (ANTHROPIC_API_KEY read for parity but unused)
+Env:    GOOGLE_CREDENTIALS_JSON, ANTHROPIC_API_KEY, GMAIL_APP_PW_SERGEY,
+        B2B_SHEET_ID, B2B_SHEET_TAB, DRY_RUN, B2B_FOLLOWUP_LIMIT, STATE_DIR
 """
 
 import os
 import re
+import imaplib
 from datetime import datetime, timezone, timedelta
 
 import email_common as ec
+from b2b_sender import (fetch_company_website, _clean_site_text,
+                        print_prompt_for_review, strip_em_dashes,
+                        strip_trailing_signoff, clean_company_name)
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -63,6 +71,11 @@ FOLLOWUP_AFTER_DAYS = int(os.environ.get("B2B_FOLLOWUP_AFTER_DAYS", "7"))
 
 _STATE_DIR = os.environ.get("STATE_DIR", ".")
 STATE_FILE = os.path.join(_STATE_DIR, "b2b_followup_state.json")
+
+MODEL = "claude-sonnet-5"
+MAX_TOKENS = 700
+
+SIG = '\n\nBest regards,\nSergey\nUTD Web | utdweb.team'
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -125,7 +138,8 @@ def _parse_date_sent(value):
 def find_needing_followup(rows):
     """Reproduce «Find Contacts Needing Follow-Up»: Status 'Sent' + valid email +
     not competitor + Date Sent present + Date Sent older than the cutoff.
-    Returns an ordered list of {row_number, email, company_name} (first = next up)."""
+    Returns an ordered list of contact dicts (first = next up), now carrying the
+    extra context columns (Website, Thread ID, Date Sent) for the Claude draft."""
     cutoff = datetime.now(timezone.utc) - timedelta(days=FOLLOWUP_AFTER_DAYS)
     out = []
     for row_number, r in rows:
@@ -137,34 +151,273 @@ def find_needing_followup(rows):
         dt = _parse_date_sent(d)
         if not dt or not (dt < cutoff):
             continue
+        website = str(r.get("Website", "")).strip()
+        url = ""
+        if website:
+            url = website if website.startswith("http") else "https://" + website
+        # Sheet header is "Company Name"; "Company" kept as a fallback.
+        company = clean_company_name(
+            str(r.get("Company Name", "") or r.get("Company", "")))
         out.append({
             "row_number": row_number,
             "email": e,
-            "company_name": str(r.get("Company", "")) or "Unknown",
+            "company_name": company,
+            "website": url,
+            "thread_id": str(r.get("Thread ID", "")).strip(),
+            "date_sent": str(d).strip(),
+            "orig_subject": str(r.get("Subject", "") or r.get("Email Subject", "")).strip(),
         })
     return out
 
 
 # ═══════════════════════════════════════════════════════════════════
-#   BUILD FOLLOW-UP EMAIL  (verbatim from «Build Follow-Up Email»)
+#   PRIOR CORRESPONDENCE  (IMAP thread via email_common.fetch_thread)
 # ═══════════════════════════════════════════════════════════════════
 
-def build_followup_email(contact):
-    body = (
+_MSGID_HDR_RE = re.compile(rb"Message-ID:\s*(<[^>]+>)", re.I)
+
+
+def resolve_thread(account, thread_ref):
+    """Return (gm_thrid, reply_to_msg_id) for the sheet's Thread ID value.
+
+    The column holds either a Gmail API thread id (HEX, legacy n8n rows) or the
+    SMTP Message-ID of our first email (rows sent by b2b_sender). Both are
+    resolved over IMAP into the numeric X-GM-THRID that ec.fetch_thread needs,
+    plus the Message-ID of the newest message in the thread (the right target
+    for an in-thread reply). When IMAP is unavailable, returns ("", message_id)
+    so a Message-ID row can still be replied to in-thread. Never raises."""
+    ref = (thread_ref or "").strip()
+    msg_id_ref = ""
+    if "@" in ref:
+        msg_id_ref = ref if ref.startswith("<") else "<%s>" % ref
+    gm = ""
+    if ref.isdigit():
+        gm = ref
+    elif not msg_id_ref and re.fullmatch(r"[0-9a-fA-F]{10,20}", ref):
+        try:
+            gm = str(int(ref, 16))  # Gmail API hex thread id -> X-GM-THRID
+        except Exception:
+            gm = ""
+    if not account.get("password") or (not gm and not msg_id_ref):
+        return "", msg_id_ref
+    M = None
+    try:
+        M = imaplib.IMAP4_SSL(ec.IMAP_HOST, ec.IMAP_PORT)
+        M.login(account["user"], account["password"])
+        for box in ("[Gmail]/All Mail", "[Google Mail]/All Mail"):
+            typ, _ = M.select(box, readonly=True)
+            if typ == "OK":
+                break
+        else:
+            return "", msg_id_ref
+        # Message-ID row: look up its numeric thread id first.
+        if not gm and msg_id_ref:
+            typ, data = M.uid("SEARCH", None, "HEADER", "Message-ID",
+                              msg_id_ref.strip("<>"))
+            if typ == "OK" and data and data[0]:
+                uid = data[0].split()[0]
+                typ, md = M.uid("FETCH", uid, "(X-GM-THRID)")
+                if typ == "OK" and md and md[0]:
+                    meta = md[0][0] if isinstance(md[0], tuple) else md[0]
+                    gm = ec._gm_thrid_from_fetch(meta)
+        # Newest message in the thread = what the reply should reference.
+        last_mid = ""
+        if gm:
+            typ, data = M.uid("SEARCH", None, "X-GM-THRID", gm)
+            if typ == "OK" and data and data[0]:
+                last_uid = data[0].split()[-1]
+                typ, md = M.uid("FETCH", last_uid,
+                                "(BODY.PEEK[HEADER.FIELDS (MESSAGE-ID)])")
+                if typ == "OK" and md and md[0] and isinstance(md[0], tuple):
+                    m = _MSGID_HDR_RE.search(md[0][1] or b"")
+                    if m:
+                        last_mid = m.group(1).decode("ascii", "replace")
+        return gm, (last_mid or msg_id_ref)
+    except Exception:
+        return "", msg_id_ref
+    finally:
+        if M is not None:
+            try:
+                M.logout()
+            except Exception:
+                pass
+
+
+def fetch_prior_thread(contact):
+    """Pull the real correspondence for this contact when we can (app password
+    present + row has a Thread ID). Returns (thread_list, reply_to_msg_id):
+    a chronological fetch_thread list ([] when IMAP is unavailable / thread not
+    found) and the Message-ID an in-thread reply should reference ("" if none)."""
+    if not contact.get("thread_id"):
+        return [], ""
+    gm_thrid, reply_mid = resolve_thread(ACCOUNT, contact["thread_id"])
+    if not gm_thrid:
+        return [], reply_mid
+    thread = ec.fetch_thread(ACCOUNT, gm_thrid, own_addresses=[ACCOUNT["user"]])
+    return thread, reply_mid
+
+
+def format_thread_history(thread, max_chars=4000):
+    """Render a fetch_thread() list into a compact chronology for the model."""
+    if not thread:
+        return ""
+    lines = []
+    for m in thread:
+        who = "UTD (us)" if m.get("direction") == "sent" else "Prospect"
+        atts = m.get("attachment_names") or []
+        att_note = f" | attachments: {', '.join(atts)}" if atts else ""
+        snippet = (m.get("snippet") or "").strip()
+        lines.append(f"- [{m.get('date', '')}] {who} | subject: "
+                     f"{m.get('subject', '')}{att_note}\n  {snippet}")
+    return "\n".join(lines)[:max_chars]
+
+
+def correspondence_summary(contact):
+    """Faithful summary used when the real thread cannot be pulled over IMAP."""
+    subj = contact.get("orig_subject") or "UTD Referral program: partnership invitation"
+    return (f"first outreach sent on {contact.get('date_sent') or 'an earlier date'}, "
+            f"subject \"{subj}\", referral-program invitation, no reply received")
+
+
+# ═══════════════════════════════════════════════════════════════════
+#   BUILD CLAUDE REQUEST  (canon follow-up prompt)
+# ═══════════════════════════════════════════════════════════════════
+
+SYSTEM_PROMPT = (
+    'You are Sergey, a partnership manager at UTD Web (utdweb.team), a Shopify theme studio with 25 themes '
+    'published on Shopify\'s official Theme Store (https://themes.shopify.com/themes?q=UTD).\n'
+    '\n'
+    'You write a SHORT follow-up email to a web or ecommerce agency that received our UTD Referral program '
+    'invitation and has not replied. Program in one line: agencies that build client stores on UTD themes earn '
+    'a commission on theme sales, plus priority technical support, early access to new theme versions, and '
+    'access to UTD services (custom development, content, digital marketing, SEO).\n'
+    '\n'
+    'GOAL: get a reply and move this agency toward the next funnel step (program details memo, then agreement). '
+    'This is a nudge, not a recap. Reference the earlier email naturally in one clause, without guilt-tripping, '
+    'then add ONE new concrete angle that was NOT in the first email: a specific observation from their website, '
+    'or one program benefit stated plainly. Never repeat the first email\'s pitch wholesale.\n'
+    '\n'
+    'HARD WRITING RULES:\n'
+    '1. Never use an em dash anywhere in the letter. Use a comma, colon, or period instead.\n'
+    '2. Forbidden words: exclusive, exciting, game-changer, handpicked, curated, unique opportunity. No hype, no '
+    'corporate slop ("in today\'s world", "take it to the next level", "seamless", "revolutionary").\n'
+    '3. The first 3 words of the body (after the greeting) must hook: a concrete observation, a number, or a '
+    'direct point. Never "I hope this finds you well" or "just checking in".\n'
+    '4. Under 120 words total. Short direct sentences, with an occasional longer one. Honest text.\n'
+    '5. Never invent features, numbers, prices, or client results. The only links allowed: https://utdweb.team '
+    'and https://themes.shopify.com/themes?q=UTD.\n'
+    '6. Do NOT state exact commission percentages or thresholds. The numbers come later in the program memo.\n'
+    '7. Greeting: "Hi [Company Name] team," with the real company name, never a personal name.\n'
+    '8. End with ONE clear, low-friction ask: a short reply, a yes or no, or a 15-minute call.\n'
+    '9. NO signature, sign-off, subject line, or footer. Output ONLY the email body, starting with the greeting.\n'
+    '10. If the prospect\'s website or their emails are clearly in a language other than English, write the '
+    'entire email in that language. Otherwise write in English.'
+)
+
+
+def build_claude_request(contact, site_text, history_text):
+    """Return (system, user_prompt) for the canon follow-up letter."""
+    if history_text:
+        prior = ('Prior correspondence (chronological, oldest first):\n' + history_text)
+    else:
+        prior = 'Prior correspondence (summary): ' + correspondence_summary(contact)
+    dt = _parse_date_sent(contact.get("date_sent"))
+    days = (datetime.now(timezone.utc) - dt).days if dt else FOLLOWUP_AFTER_DAYS
+    user_prompt = (
+        'Company: ' + contact["company_name"] +
+        '\nWebsite: ' + (contact.get("website") or "unknown") +
+        '\nFirst email sent: ' + (contact.get("date_sent") or "unknown") +
+        f' ({days} days ago, no reply)' +
+        '\n\nWebsite content (fresh scrape, may be partial):\n' +
+        (site_text or 'Site content unavailable.') +
+        '\n\n' + prior +
+        '\n\nWrite the follow-up email body now. Under 120 words. One new concrete '
+        'angle, one clear ask. Output ONLY the body, starting with the greeting. '
+        'No subject line, no signature.'
+    )
+    return SYSTEM_PROMPT, user_prompt
+
+
+def clean_ai_body(text):
+    """Normalize the Claude draft: drop stray SUBJECT/BODY labels, trailing
+    sign-offs and em dashes, then append the fixed canon signature."""
+    body = (text or "").strip()
+    body = re.sub(r"^SUBJECT:.*\n", "", body, count=1, flags=re.I)
+    body = re.sub(r"^BODY:\s*\n?", "", body, count=1, flags=re.I).strip()
+    body = strip_trailing_signoff(body)
+    body = strip_em_dashes(body)
+    return body + SIG
+
+
+# ═══════════════════════════════════════════════════════════════════
+#   FALLBACK  (existing static template, used when Claude fails)
+# ═══════════════════════════════════════════════════════════════════
+
+def _fallback_body(contact):
+    return (
         'Hi ' + contact["company_name"] + ' team,\n\n'
         'I am following up on my email from last week regarding a potential partnership.\n\n'
         'To briefly recap: we are UTD Web, a Shopify theme studio. Our themes are available on Shopify\'s official '
-        'Theme Store (themes.shopify.com/themes?q=UTD). Through our UTD Referral program, web agencies that build '
+        'Theme Store (https://themes.shopify.com/themes?q=UTD). Through our UTD Referral program, web agencies that build '
         'client stores using our themes receive a referral fee on each purchase, with no additional overhead.\n\n'
         'If the timing is not right or this falls outside your area of work, please disregard this message entirely. '
-        'However, if there is any interest, I would be glad to answer questions or arrange a short call at a time that suits you.\n\n'
-        'Best regards,\nSergey\nUTD Web · utdweb.team'
+        'However, if there is any interest, I would be glad to answer questions or arrange a short call at a time that suits you.'
+        + SIG
     )
+
+
+def _original_subject(contact, thread):
+    """Best-known subject of the first outreach: real thread > sheet > default."""
+    for m in thread or []:
+        if m.get("direction") == "sent":
+            s = (m.get("subject") or "").strip()
+            if s:
+                return re.sub(r"^(?:re|fwd?):\s*", "", s, flags=re.I)
+    if contact.get("orig_subject"):
+        return contact["orig_subject"]
+    return "UTD Referral program: partnership invitation"
+
+
+def build_followup_email(contact):
+    """Assemble the full follow-up: context (site + prior thread) → Claude draft
+    per canon → fallback template on failure. Returns
+    {email, company_name, email_subject, email_body, in_reply_to}."""
+    # 1) Fresh site scrape (same helper the cold sender uses).
+    site_text = ""
+    if contact.get("website"):
+        site_text = _clean_site_text(fetch_company_website(contact["website"]))
+
+    # 2) Prior correspondence: real IMAP thread when possible, else summary.
+    thread, reply_mid = fetch_prior_thread(contact)
+    history_text = format_thread_history(thread)
+    if thread:
+        print(f"  [thread] pulled {len(thread)} prior message(s) over IMAP")
+    else:
+        print("  [thread] IMAP thread unavailable -> using summary of first outreach")
+
+    # 3) Claude draft (canon), with the static template as fallback.
+    system, user_prompt = build_claude_request(contact, site_text, history_text)
+    if DRY_RUN:
+        # Review aid: dump the exact prompts before the (possibly key-less) call.
+        print_prompt_for_review("b2b follow-up", system, user_prompt)
+    ai_text = ec.call_claude(system, user_prompt, model=MODEL, max_tokens=MAX_TOKENS)
+    if ai_text:
+        body = clean_ai_body(ai_text)
+    else:
+        print("[claude unavailable -> fallback used]")
+        body = _fallback_body(contact)
+
+    # 4) Threading: reply inside the original conversation when we know the
+    #    Message-ID to reference (resolved over IMAP, or stored on the row).
+    in_reply_to = reply_mid
+    subject = "Re: " + strip_em_dashes(_original_subject(contact, thread))
+
     return {
         "email": contact["email"],
         "company_name": contact["company_name"],
-        "email_subject": "Follow-up: UTD Referral partnership enquiry",
+        "email_subject": subject,
         "email_body": body,
+        "in_reply_to": in_reply_to,
     }
 
 
@@ -172,12 +425,13 @@ def build_followup_email(contact):
 #   SEND + SHEET WRITE  (guarded by DRY_RUN)
 # ═══════════════════════════════════════════════════════════════════
 
-def _print_draft(to, subject, body):
+def _print_draft(to, subject, body, in_reply_to=""):
     print("\n" + "=" * 70)
     print("[DRAFT · b2b follow-up]  DRY_RUN — not sent")
     print(f"  from   : {SENDER_NAME} <{ACCOUNT['user']}>")
     print(f"  to     : {to}")
     print(f"  subject: {subject}")
+    print(f"  thread : {'in-thread reply to ' + in_reply_to if in_reply_to else 'fresh email (no reply Message-ID available)'}")
     print("  body:")
     for line in (body or "").splitlines():
         print("    " + line)
@@ -188,16 +442,18 @@ def send_and_mark(ws, header, contact, drafted, state, stats):
     to = contact["email"]
     subject = drafted["email_subject"]
     body = drafted["email_body"]
+    in_reply_to = drafted.get("in_reply_to") or None
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
     if DRY_RUN:
-        _print_draft(to, subject, body)
+        _print_draft(to, subject, body, in_reply_to or "")
         print(f"  [SHEET] DRY_RUN — would set row {contact['row_number']} → "
               f"Status='Follow-up Sent', Date Sent='{now}' (match Email={to})")
         stats["sent"] += 1
         return
 
-    ec.send_email(ACCOUNT, to, subject, body)
+    # send_email builds the References header from in_reply_to itself.
+    ec.send_email(ACCOUNT, to, subject, body, in_reply_to=in_reply_to)
     updates = {"Status": "Follow-up Sent", "Date Sent": now}
     cell_updates = []
     for col, val in updates.items():
@@ -255,7 +511,8 @@ def run_once():
             continue
 
         print(f"\n· follow-up row {contact['row_number']} → {contact['email']} "
-              f"({contact['company_name']})")
+              f"({contact['company_name']}) | site={contact.get('website') or '-'} | "
+              f"thread={'yes' if contact.get('thread_id') else 'no'}")
         drafted = build_followup_email(contact)
         try:
             send_and_mark(ws, header, contact, drafted, state, stats)

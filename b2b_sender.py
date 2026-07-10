@@ -4,8 +4,10 @@ b2b_sender.py — UTD "Referral program" B2B cold-outreach sender.
 
 Faithful Python port of the n8n workflow B2B_send (Oc9j9TViJKwBNpeV) for
 GitHub Actions. One run picks ONE uncontacted web agency from the CRM sheet,
-scrapes its website, asks Claude to write a four-paragraph partnership
-invitation, sends it over SMTP (Gmail app-password) and marks the row "Sent".
+scrapes its website, asks Claude to write a personalized referral-program
+invitation (canon: hook in first 3 words, ONE concrete site observation, under
+170 words, no em dashes, no hype words, no invented facts, funnel-advancing
+ask), sends it over SMTP (Gmail app-password) and marks the row "Sent".
 
 n8n → Python node mapping:
   Get Contacts from Sheet   → ec.open_worksheet + ec.read_rows_ws (ONE read)
@@ -107,6 +109,15 @@ def is_valid(e):
     return True
 
 
+def clean_company_name(name):
+    """Company names in the sheet come from page <title> tags and often carry
+    taglines ("Monforte Studio | Web Design and Branding"). Keep the brand part
+    so the greeting reads "Hi Monforte Studio team,". Shared with b2b_followup."""
+    n = (name or "").strip()
+    n = re.split(r"\s*[|•]\s*|\s+[-–—]\s+", n)[0].strip()
+    return n or "Unknown"
+
+
 def pick_next_uncontacted(rows):
     """Reproduce «Pick Next Uncontacted»: Status empty + valid email + Website
     present + not a theme competitor, then choose ONE row at random.
@@ -126,10 +137,13 @@ def pick_next_uncontacted(rows):
     row_number, r = candidates[random.randrange(len(candidates))]
     website = str(r.get("Website", "")).strip()
     url = website if website.startswith("http") else "https://" + website
+    # Sheet header is "Company Name"; "Company" kept as a fallback.
+    company = clean_company_name(
+        str(r.get("Company Name", "") or r.get("Company", "")))
     return {
         "row_number": row_number,
         "email": str(r.get("Email", "")).strip(),
-        "company_name": str(r.get("Company", "")) or "Unknown",
+        "company_name": company,
         "website": url,
     }
 
@@ -175,62 +189,92 @@ def _clean_site_text(html):
 
 
 SYSTEM_PROMPT = (
-    'You are Sergey, a partnership manager at UTD Web (utdweb.team). '
-    'UTD Web is one of the leading Shopify theme studios with 25 themes published on Shopify\'s official Theme Store '
-    '(themes.shopify.com/themes?q=UTD), trusted by thousands of merchants worldwide. '
-    '\n\n'
-    'You are writing a formal, professional partnership invitation to a web agency. '
-    'The email must follow a precise four-paragraph structure — do not deviate from it. '
-    '\n\n'
-    'TONE: Professional, respectful, measured. No hype. No urgency. No pushy language. '
-    'Sound like a senior business representative, not a marketer. '
-    '\n\n'
-    'FOUR-PARAGRAPH STRUCTURE — follow exactly in this order:\n'
+    'You are Sergey, a partnership manager at UTD Web (utdweb.team), a Shopify theme studio with 25 themes '
+    'published on Shopify\'s official Theme Store (https://themes.shopify.com/themes?q=UTD), used by thousands '
+    'of merchants worldwide.\n'
     '\n'
-    'PARAGRAPH 1 — Why we selected this company:\n'
-    '  • 1–2 sentences with a specific, concrete observation about their work based on the website content.\n'
-    '  • Final sentence (exact phrasing): "That is why we selected your company for our UTD Referral program."\n'
+    'You write a cold outreach email inviting a web or ecommerce agency to the UTD Referral program: agencies '
+    'that build client stores on UTD themes earn a commission on theme sales, plus priority technical support, '
+    'early access to new theme versions before public release, and access to UTD services (custom development, '
+    'content, digital marketing, SEO).\n'
     '\n'
-    'PARAGRAPH 2 — About UTD Web:\n'
-    '  • State that UTD Web is among the leading Shopify theme studios.\n'
-    '  • Mention 25 themes on Shopify\'s official Theme Store — reference the link naturally: themes.shopify.com/themes?q=UTD\n'
-    '  • One brief reason why working with UTD is a sound choice (quality, merchant trust, ongoing investment).\n'
-    '  • Maximum 2–3 sentences.\n'
+    'GOAL: get a reply and move this agency to the next step of the referral funnel (program details memo, then '
+    'agreement). Every sentence must earn that reply. This is a persuasion letter, not an information dump.\n'
     '\n'
-    'PARAGRAPH 3 — UTD Referral program benefits (2 sentences maximum):\n'
-    '  Summarise ALL of the following into no more than 2 sentences:\n'
-    '  — Commission on every theme sale\n'
-    '  — Complimentary top-tier technical support\n'
-    '  — Early access to new theme versions before public release\n'
-    '  — 10% discount on premium support packages\n'
-    '  — Access to additional services: custom development, content, digital marketing, SEO\n'
+    'ANALYSIS FIRST: read the website content provided and find ONE concrete, specific observation about THIS '
+    'company (a named client or project, a service they emphasise, a platform or industry they focus on, a claim '
+    'or phrase from their own site). Build the letter around that observation. Generic compliments about "great '
+    'work" or "impressive portfolio" are forbidden.\n'
     '\n'
-    'PARAGRAPH 4 — Closing:\n'
-    '  • One sentence on why this program suits their type of agency (based on their website).\n'
-    '  • One sentence inviting a reply or brief conversation.\n'
-    '\n'
-    'HARD RULES:\n'
-    '  1. Greeting: "Hi [Company Name] team," — actual company name, never a personal name.\n'
-    '  2. Total body under 200 words — write tight, no padding.\n'
-    '  3. NO signature, sign-off, or footer — added separately.\n'
-    '  4. Do not use words: exclusive, exciting, game-changer, handpicked, curated, unique opportunity.'
+    'HARD WRITING RULES:\n'
+    '1. Never use an em dash anywhere in the letter. Use a comma, colon, or period instead.\n'
+    '2. Forbidden words: exclusive, exciting, game-changer, handpicked, curated, unique opportunity. No hype, no '
+    'corporate slop ("in today\'s world", "take it to the next level", "seamless", "revolutionary").\n'
+    '3. The first 3 words of the body (after the greeting) must hook: a concrete observation, a number, or a '
+    'direct point. Never "I hope this finds you well" or any variant.\n'
+    '4. Under 170 words total. Mix longer flowing sentences with short ones. Direct, honest text.\n'
+    '5. Never invent features, numbers, prices, or client results. The only links allowed: https://utdweb.team '
+    'and https://themes.shopify.com/themes?q=UTD.\n'
+    '6. Do NOT state exact commission percentages or thresholds. Say there is a commission on theme sales; the '
+    'exact numbers come later in the program memo.\n'
+    '7. Greeting: "Hi [Company Name] team," with the real company name, never a personal name.\n'
+    '8. End with ONE clear, low-friction ask: a short reply, a yes or no, or a 15-minute call.\n'
+    '9. NO signature, sign-off, or footer. It is added separately.\n'
+    '10. If the website content is clearly in a language other than English, write the entire email in that '
+    'language. Otherwise write in English.'
 )
 
 
 def build_claude_request(contact, html):
-    """Return (system, user_prompt) exactly as «Build Claude Request» builds them."""
+    """Return (system, user_prompt) for the canon referral-invitation letter."""
     site_text = _clean_site_text(html)
     user_prompt = (
         'Company: ' + contact["company_name"] +
         '\nWebsite: ' + contact["website"] +
-        '\nWebsite content:\n' + site_text +
-        '\n\nWrite the invitation email following the four-paragraph structure. Under 200 words. '
+        '\nWebsite content (scraped, may be partial):\n' + site_text +
+        '\n\nWrite the referral-program invitation email now. Under 170 words. '
+        'Ground it in ONE concrete observation from the website content above. '
         'Reply ONLY in this exact format:\n'
-        'SUBJECT: [subject line]\n'
+        'SUBJECT: [short concrete subject line, no em dash, no forbidden words]\n'
         'BODY:\n'
-        '[four-paragraph email body — no signature, no sign-off]'
+        '[email body, no signature, no sign-off]'
     )
     return SYSTEM_PROMPT, user_prompt
+
+
+def print_prompt_for_review(tag, system, user):
+    """DRY_RUN aid: dump the exact SYSTEM + user prompt so the letter brief can
+    be reviewed without an ANTHROPIC_API_KEY. Shared with b2b_followup."""
+    bar = "-" * 70
+    print("\n" + bar)
+    print(f"[PROMPT REVIEW · {tag}] SYSTEM prompt sent to Claude:")
+    print(bar)
+    print(system)
+    print(bar)
+    print(f"[PROMPT REVIEW · {tag}] USER prompt sent to Claude:")
+    print(bar)
+    print(user)
+    print(bar)
+
+
+def strip_em_dashes(text):
+    """Copy canon: never an em dash in an outgoing letter. Defensive scrub in
+    case the model slips one through."""
+    if not text:
+        return text
+    return text.replace(" — ", " - ").replace("—", "-")
+
+
+def strip_trailing_signoff(body):
+    """Remove any trailing sign-off / footer the model appended despite the
+    rules (the fixed signature is added separately). Shared with b2b_followup."""
+    body = re.sub(
+        r"\n{1,3}(?:best\s*regards?|sincerely|cheers|warm\s*regards?|regards?|yours\s+faithfully|yours\s+sincerely)[,.]?[\s\S]*$",
+        "", body, flags=re.I)
+    body = re.sub(r"\n{1,3}\[your[\s_]*name\][\s\S]*$", "", body, flags=re.I)
+    body = re.sub(r"\n{1,3}-{2,}\s*\n[\s\S]*$", "", body)
+    body = re.sub(r"\n{1,3}this\s+email\s+was\s+sent[\s\S]*$", "", body, flags=re.I)
+    return re.sub(r"\n{3,}", "\n\n", body).strip()
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -241,24 +285,22 @@ def _fallback_text(company_name):
     """The no-AI fallback body from the «Parse + Clean Email» catch block
     (used when Claude returns nothing / an unparseable response)."""
     return (
-        'SUBJECT: UTD Referral Program — Partnership Invitation\n'
+        'SUBJECT: UTD Referral program: partnership invitation\n'
         'BODY:\n'
         'Hi ' + company_name + ' team,\n\n'
-        'We have been following your work and are impressed by the quality and consistency of your projects. '
-        'That is why we selected your company for our UTD Referral program.\n\n'
-        'UTD Web is among the leading Shopify theme studios, with 25 themes published on Shopify\'s official '
-        'Theme Store (themes.shopify.com/themes?q=UTD). Our themes are trusted by thousands of merchants '
+        'Your work caught our attention, and we selected your company for the UTD Referral program.\n\n'
+        'UTD Web is a Shopify theme studio with 25 themes published on Shopify\'s official '
+        'Theme Store (https://themes.shopify.com/themes?q=UTD). Our themes are used by thousands of merchants '
         'worldwide, and we invest continuously in performance, design quality, and merchant success.\n\n'
-        'Through UTD Referral, partners earn a commission on every theme sale and receive complimentary '
-        'top-tier technical support, early access to new theme versions prior to public release, and the '
-        'ability to contribute to our product roadmap — alongside a 10% discount on premium support packages '
-        'and access to custom development, content, marketing, and SEO services.\n\n'
-        'Given the nature of your work, we believe this program aligns well with your existing offering. '
-        'We would be glad to provide further details and look forward to hearing from you.'
+        'Through UTD Referral, partner agencies earn a commission on every theme sale and receive priority '
+        'technical support, early access to new theme versions before public release, and access to our '
+        'custom development, content, marketing, and SEO services.\n\n'
+        'If this fits how you build client stores, reply and I will send over the program details. '
+        'Would a short overview be useful?'
     )
 
 
-SIG = '\n\nBest regards,\nSergey\nUTD Web · utdweb.team'
+SIG = '\n\nBest regards,\nSergey\nUTD Web | utdweb.team'
 
 
 def parse_and_clean(text, company_name):
@@ -270,7 +312,7 @@ def parse_and_clean(text, company_name):
 
     subm = re.search(r"SUBJECT:\s*(.+?)(?:\n|$)", text, re.I)
     bodm = re.search(r"BODY:\n([\s\S]+)", text, re.I)
-    subject = subm.group(1).strip() if subm else "UTD Referral Program — Partnership Invitation"
+    subject = subm.group(1).strip() if subm else "UTD Referral program: partnership invitation"
     if bodm:
         body = bodm.group(1).strip()
     else:
@@ -278,13 +320,11 @@ def parse_and_clean(text, company_name):
         body = re.sub(r"BODY:", "", body, count=1, flags=re.I).strip()
 
     # SAFE STRIP: only trailing sign-off / footer anchored to end of string.
-    body = re.sub(
-        r"\n{1,3}(?:best\s*regards?|sincerely|cheers|warm\s*regards?|regards?|yours\s+faithfully|yours\s+sincerely)[,.]?[\s\S]*$",
-        "", body, flags=re.I)
-    body = re.sub(r"\n{1,3}\[your[\s_]*name\][\s\S]*$", "", body, flags=re.I)
-    body = re.sub(r"\n{1,3}-{2,}\s*\n[\s\S]*$", "", body)
-    body = re.sub(r"\n{1,3}this\s+email\s+was\s+sent[\s\S]*$", "", body, flags=re.I)
-    body = re.sub(r"\n{3,}", "\n\n", body).strip()
+    body = strip_trailing_signoff(body)
+
+    # Copy canon: no em dashes anywhere in the outgoing letter.
+    subject = strip_em_dashes(subject)
+    body = strip_em_dashes(body)
 
     return {"email_subject": subject, "email_body": body + SIG}
 
@@ -405,7 +445,12 @@ def run_once():
 
         html = fetch_company_website(contact["website"])
         system, user_prompt = build_claude_request(contact, html)
+        if DRY_RUN:
+            # Review aid: dump the exact prompts before the (possibly key-less) call.
+            print_prompt_for_review("b2b send", system, user_prompt)
         ai_text = ec.call_claude(system, user_prompt, model=MODEL, max_tokens=MAX_TOKENS)
+        if not ai_text:
+            print("[claude unavailable -> fallback used]")
         drafted = parse_and_clean(ai_text, contact["company_name"])
 
         try:
