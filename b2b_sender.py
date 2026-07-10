@@ -217,7 +217,7 @@ SYSTEM_PROMPT = (
     '"I visited your site and noticed...". Then 2-3 more simple sentences: what their company does, one real '
     'specific thing from their site (a project, a service, a client), and one more sentence saying plainly WHY '
     'that made us write to them (what about their work fits our program). Plain words anyone understands. '
-    'Nothing about UTD in this paragraph.\n'
+    'Nothing about UTD in this paragraph. If the website content could not be loaded, NEVER mention errors, 403s or that you could not open the site: write the observation from the company name and what kind of agency they are, or keep the paragraph to one modest sentence.\n'
     '3. ABOUT US ONLY. Who UTD Web is and why we matter: we build Shopify themes, 6 themes with 30 ready-made '
     'designs live on Shopify\'s official Theme Store (link https://themes.shopify.com/themes?q=UTD), Shopify '
     'reviews every theme before listing, thousands of merchants run on them, and conversion features (upsells, '

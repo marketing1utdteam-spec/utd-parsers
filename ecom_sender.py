@@ -167,7 +167,7 @@ PRESETS = {
     "Flip":      {"theme": "Victory",    "primary": "Sports & Fitness",      "secondary": ["Kids & Toys", "Auto & Moto"]},
     # Ultra ($100)
     "Ultra":     {"theme": "Ultra",      "primary": "Electronics & Tech",    "secondary": ["Auto & Moto", "Kids & Toys"]},
-    "Grip":      {"theme": "Ultra",      "primary": "Auto & Moto",           "secondary": ["Sports & Fitness", "Electronics & Tech"]},
+    "Grip":      {"theme": "Ultra",      "primary": "Sports & Fitness",      "secondary": ["Auto & Moto", "Electronics & Tech"]},
     "Harbor":    {"theme": "Ultra",      "primary": "Home & Furniture",      "secondary": ["Art & Crafts", "Electronics & Tech"]},
     "Sprout":    {"theme": "Ultra",      "primary": "Pets",                  "secondary": ["Health & Supplements", "Kids & Toys"]},
     "Grace":     {"theme": "Ultra",      "primary": "Beauty & Cosmetics",    "secondary": ["Fashion & Apparel", "Jewelry & Accessories"]},
@@ -204,8 +204,11 @@ def preset_url(preset):
 
 
 def preset_ref(preset):
-    """How a preset appears anywhere: Name design of Theme ($price, demo url)."""
+    """How a preset appears anywhere. Base presets (name == theme) read as the
+    theme itself; named presets read as 'Name design of Theme'."""
     th = PRESETS[preset]["theme"]
+    if preset == th:
+        return "the " + th + " theme (" + CATALOG[th]["price"] + ", " + CATALOG[th]["link"] + ")"
     return (preset + " design of " + th + " (" + CATALOG[th]["price"] + ", " +
             preset_url(preset) + ")")
 
@@ -680,8 +683,12 @@ def build_request(c, site_text, history=""):
                "whose MAIN industry matches the store's real industry, and "
                "sell it: preset name + demo link + parent theme price, 1-2 "
                "features tied to their store, one short woven proof clause "
-               "from the EVIDENCE ARSENAL. If the user message contains "
-               "REAL PageSpeed numbers, state them plainly as something we "
+               "from the EVIDENCE ARSENAL. If several presets share that "
+               "main industry, take the one listed FIRST in the registry. "
+               "NEVER name any other preset anywhere in the letter: the "
+               "chosen preset is the only preset word allowed; alternatives "
+               "are THEMES only. If the user message contains REAL "
+               "PageSpeed numbers, state them plainly as something we "
                "measured; if not, do NOT claim we tested anything.\n"
                "5. Value line, 1 sentence: upsells/cross-sells/promo blocks "
                "are built in, that usually replaces $15-50/month of apps, so "
