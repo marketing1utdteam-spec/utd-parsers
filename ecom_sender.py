@@ -150,30 +150,100 @@ def _names_with_links(csv_names, fallback_names):
 
 # ONE specialized preset per industry (theme, preset) — the preset IS the product
 # we sell first; names are the real Theme Store presets.
-PRESET_MAP = {
-    "Auto & Moto":            ("Victory", "Nitro"),
-    "Sports & Fitness":       ("Victory", "Athletica"),
-    "Food & Beverage":        ("Victory", "Roast"),
-    "Home & Furniture":       ("Gain", "Maison"),
-    "Jewelry & Accessories":  ("Allure", "Bijou"),
-    "Beauty & Cosmetics":     ("Allure", "Pristine"),
-    "Fashion & Apparel":      ("Allure", "Stitch"),
-    "Electronics & Tech":     ("Ultra", "Ultra"),
-    "Kids & Toys":            ("Impression", "Mimi"),
-    "Pets":                   ("Ultra", "Ultra"),
-    "Health & Supplements":   ("Victory", "Victory"),
-    "Art & Crafts":           ("Allure", "Carrara"),
+# ═══════════════════════════════════════════════════════════════════
+#   PRESET REGISTRY — каждый пресет: ОДНА основная индустрия + ДВЕ
+#   второстепенные (правится в одном месте, здесь).
+#   t1 продаёт пресет, чья ОСНОВНАЯ индустрия = реальная индустрия магазина
+#   (по контенту сайта). t2 напоминает главный пресет и добавляет ДВА пресета,
+#   у которых индустрия магазина стоит во ВТОРОСТЕПЕННЫХ.
+# ═══════════════════════════════════════════════════════════════════
+
+PRESETS = {
+    # Victory ($320)
+    "Victory":   {"theme": "Victory",    "primary": "Food & Beverage",       "secondary": ["Sports & Fitness", "Health & Supplements"]},
+    "Athletica": {"theme": "Victory",    "primary": "Sports & Fitness",      "secondary": ["Health & Supplements", "Fashion & Apparel"]},
+    "Nitro":     {"theme": "Victory",    "primary": "Auto & Moto",           "secondary": ["Electronics & Tech", "Sports & Fitness"]},
+    "Roast":     {"theme": "Victory",    "primary": "Food & Beverage",       "secondary": ["Health & Supplements", "Art & Crafts"]},
+    "Flip":      {"theme": "Victory",    "primary": "Sports & Fitness",      "secondary": ["Kids & Toys", "Auto & Moto"]},
+    # Ultra ($100)
+    "Ultra":     {"theme": "Ultra",      "primary": "Electronics & Tech",    "secondary": ["Auto & Moto", "Kids & Toys"]},
+    "Grip":      {"theme": "Ultra",      "primary": "Auto & Moto",           "secondary": ["Sports & Fitness", "Electronics & Tech"]},
+    "Harbor":    {"theme": "Ultra",      "primary": "Home & Furniture",      "secondary": ["Art & Crafts", "Electronics & Tech"]},
+    "Sprout":    {"theme": "Ultra",      "primary": "Pets",                  "secondary": ["Health & Supplements", "Kids & Toys"]},
+    "Grace":     {"theme": "Ultra",      "primary": "Beauty & Cosmetics",    "secondary": ["Fashion & Apparel", "Jewelry & Accessories"]},
+    # Gain ($100)
+    "Gain":      {"theme": "Gain",       "primary": "Fashion & Apparel",     "secondary": ["Beauty & Cosmetics", "Electronics & Tech"]},
+    "Lace":      {"theme": "Gain",       "primary": "Fashion & Apparel",     "secondary": ["Jewelry & Accessories", "Beauty & Cosmetics"]},
+    "Maison":    {"theme": "Gain",       "primary": "Home & Furniture",      "secondary": ["Art & Crafts", "Kids & Toys"]},
+    "Mio":       {"theme": "Gain",       "primary": "Kids & Toys",           "secondary": ["Pets", "Fashion & Apparel"]},
+    "Sable":     {"theme": "Gain",       "primary": "Beauty & Cosmetics",    "secondary": ["Fashion & Apparel", "Health & Supplements"]},
+    # Allure ($100)
+    "Allure":    {"theme": "Allure",     "primary": "Beauty & Cosmetics",    "secondary": ["Fashion & Apparel", "Health & Supplements"]},
+    "Bijou":     {"theme": "Allure",     "primary": "Jewelry & Accessories", "secondary": ["Fashion & Apparel", "Beauty & Cosmetics"]},
+    "Carrara":   {"theme": "Allure",     "primary": "Art & Crafts",          "secondary": ["Home & Furniture", "Jewelry & Accessories"]},
+    "Pristine":  {"theme": "Allure",     "primary": "Beauty & Cosmetics",    "secondary": ["Health & Supplements", "Fashion & Apparel"]},
+    "Stitch":    {"theme": "Allure",     "primary": "Fashion & Apparel",     "secondary": ["Art & Crafts", "Kids & Toys"]},
+    # Boutique ($160)
+    "Boutique":  {"theme": "Boutique",   "primary": "Fashion & Apparel",     "secondary": ["Jewelry & Accessories", "Beauty & Cosmetics"]},
+    "Aurum":     {"theme": "Boutique",   "primary": "Jewelry & Accessories", "secondary": ["Fashion & Apparel", "Beauty & Cosmetics"]},
+    "Jade":      {"theme": "Boutique",   "primary": "Beauty & Cosmetics",    "secondary": ["Jewelry & Accessories", "Health & Supplements"]},
+    "Noom":      {"theme": "Boutique",   "primary": "Home & Furniture",      "secondary": ["Electronics & Tech", "Art & Crafts"]},
+    "Reflections":{"theme": "Boutique",  "primary": "Jewelry & Accessories", "secondary": ["Beauty & Cosmetics", "Fashion & Apparel"]},
+    # Impression ($340)
+    "Impression":{"theme": "Impression", "primary": "Fashion & Apparel",     "secondary": ["Beauty & Cosmetics", "Home & Furniture"]},
+    "Etoile":    {"theme": "Impression", "primary": "Fashion & Apparel",     "secondary": ["Jewelry & Accessories", "Beauty & Cosmetics"]},
+    "Felix":     {"theme": "Impression", "primary": "Pets",                  "secondary": ["Kids & Toys", "Food & Beverage"]},
+    "Mimi":      {"theme": "Impression", "primary": "Kids & Toys",           "secondary": ["Fashion & Apparel", "Pets"]},
+    "Reflex":    {"theme": "Impression", "primary": "Electronics & Tech",    "secondary": ["Auto & Moto", "Sports & Fitness"]},
 }
 
 
+def preset_url(preset):
+    t = CATALOG[PRESETS[preset]["theme"]]
+    return t["link"] + "/presets/" + preset.lower()
+
+
+def preset_ref(preset):
+    """How a preset appears anywhere: Name design of Theme ($price, demo url)."""
+    th = PRESETS[preset]["theme"]
+    return (preset + " design of " + th + " (" + CATALOG[th]["price"] + ", " +
+            preset_url(preset) + ")")
+
+
+def primary_preset(industry):
+    """The ONE preset whose PRIMARY industry matches (first match wins)."""
+    for pr, info in PRESETS.items():
+        if info["primary"] == industry:
+            return pr
+    return "Ultra"
+
+
+def secondary_presets(industry, exclude=()):
+    """TWO presets that carry this industry in their SECONDARY industries."""
+    out = []
+    for pr, info in PRESETS.items():
+        if pr in exclude or PRESETS[pr]["theme"] in [PRESETS.get(e, {}).get("theme") for e in exclude]:
+            continue
+        if industry in info["secondary"]:
+            out.append(pr)
+        if len(out) == 2:
+            break
+    return out
+
+
+def registry_table():
+    """Whole registry rendered for the t1 prompt: Claude picks by REAL industry."""
+    lines = []
+    for pr, info in PRESETS.items():
+        lines.append("- " + preset_ref(pr) + " | main industry: " + info["primary"] +
+                     " | also fits: " + ", ".join(info["secondary"]))
+    return "\n".join(lines)
+
+
 def main_pick(industry):
-    """(theme, preset, preset_url) for this industry — the one product we sell."""
-    theme, preset = PRESET_MAP.get(industry) or (MAP.get(industry, ["Ultra"])[0],) * 2
-    if isinstance(theme, tuple):  # defensive
-        theme, preset = theme
-    t = CATALOG[theme]
-    url = t["link"] + "/presets/" + preset.lower()
-    return theme, preset, url
+    """(theme, preset, preset_url) by industry PRIMARY match (deterministic)."""
+    pr = primary_preset(industry)
+    return PRESETS[pr]["theme"], pr, preset_url(pr)
 
 
 MAP = {
@@ -399,7 +469,6 @@ def select_leads(rows):
 # ═══════════════════════════════════════════════════════════════════
 
 
-
 def measure_pagespeed(url):
     """Real Google PageSpeed (mobile) for the store: (score/100, lcp_seconds).
     Returns (None, None) on any failure — the letter then must NOT claim we
@@ -539,6 +608,16 @@ def summarize_prior_touches(c):
     return "\n".join(lines)
 
 
+def followup_main(c):
+    """Main preset for touches 2-4: the preset RECORDED at touch 1 (in the
+    sheet's Suggested Themes) if present, else the registry primary match."""
+    for token in re.split(r"[,@|]", str(c.get("suggested") or "")):
+        token = token.strip()
+        if token in PRESETS:
+            return token
+    return primary_preset(c["industry"])
+
+
 def build_thread_context(c):
     """Prior correspondence for touches 2-4. Prefers the ACTUAL thread over
     IMAP (needs the Gmail app-password + a Thread ID on the row, ~1500 chars);
@@ -592,16 +671,18 @@ def build_request(c, site_text, history=""):
                "3. US, one or two sentences: I'm Sergey from UTD Web, we make "
                "Shopify themes, they're on the official Theme Store (" +
                REGISTRY + ").\n"
-               "4. THE PITCH, 2-3 sentences: sell THE PRESET named in the "
-               "user message (the specialized design for their industry): "
-               "preset name + demo link + parent theme price, 1-2 features "
-               "tied to their store, one short woven proof clause from the "
-               "EVIDENCE ARSENAL. If the user message contains REAL "
-               "PageSpeed numbers for their site, state them plainly as "
-               "something we measured ('I ran your site through Google's "
-               "PageSpeed test: it scores X of 100 on mobile...') and tie "
-               "the pitch to them. If no numbers are given, do NOT claim "
-               "we tested anything.\n"
+               "4. THE PITCH, 2-3 sentences. FIRST decide the store's REAL "
+               "industry from the site content (products they actually "
+               "sell). The CRM industry field is only a hint and is "
+               "sometimes wrong: a store selling vehicle awnings and car "
+               "gear is Auto & Moto even if the CRM says Sports. Then pick "
+               "from the PRESET REGISTRY in the user message THE preset "
+               "whose MAIN industry matches the store's real industry, and "
+               "sell it: preset name + demo link + parent theme price, 1-2 "
+               "features tied to their store, one short woven proof clause "
+               "from the EVIDENCE ARSENAL. If the user message contains "
+               "REAL PageSpeed numbers, state them plainly as something we "
+               "measured; if not, do NOT claim we tested anything.\n"
                "5. Value line, 1 sentence: upsells/cross-sells/promo blocks "
                "are built in, that usually replaces $15-50/month of apps, so "
                "it pays for itself.\n"
@@ -611,8 +692,9 @@ def build_request(c, site_text, history=""):
                "them, or an easy preference question; never ask about their "
                "numbers).\n"
                "SUBJECT: natural and properly capitalized, naming their niche."
-               "\nOutput:\nSUBJECT: [subject]\nBODY:\n[body]")
-        m_theme, m_preset, m_url = main_pick(c["industry"])
+               "\nOutput (the PRESET line is mandatory, it is machine-read):"
+               "\nPRESET: [exact preset name you chose from the registry]"
+               "\nSUBJECT: [subject]\nBODY:\n[body]")
         speed = ""
         if c.get("psi_score") is not None:
             speed = ("\nREAL PageSpeed numbers we measured for their site "
@@ -620,14 +702,10 @@ def build_request(c, site_text, history=""):
                      str(c["psi_score"]) + " of 100" +
                      (", largest content loads in " + str(c["psi_lcp"]) + "s"
                       if c.get("psi_lcp") else "") + ".")
-        user = ("Store: " + store + "\nWebsite: " + c["website"] + "\nIndustry: " +
-                c["industry"] +
-                "\nMAIN preset (the ONE product we sell them): " + m_preset +
-                " design of the " + m_theme + " theme (" + CATALOG[m_theme]["price"] +
-                "), demo: " + m_url +
-                "\nOther themes for the one-line alternatives mention: " +
-                ", ".join(_tref(n) for n in [t for t in MAP.get(c["industry"], list(CATALOG))
-                                             if t != m_theme][:2]) +
+        user = ("Store: " + store + "\nWebsite: " + c["website"] +
+                "\nCRM industry (hint only, may be wrong): " + c["industry"] +
+                "\n\nPRESET REGISTRY (pick ONE whose main industry = the store's "
+                "REAL industry):\n" + registry_table() +
                 speed +
                 "\n\nSite content:\n" + (site_text or "(unavailable)") +
                 "\n\nWrite the email.")
@@ -651,9 +729,9 @@ def build_request(c, site_text, history=""):
                "Then ONE new point in 1-2 simple sentences: a fresh reason "
                "this theme fits their store, with one short proof clause "
                "from the EVIDENCE ARSENAL woven into the sentence.\n"
-               "Then one short paragraph: there are alternatives too, name "
-               "1-2 other themes from our catalog with their links, one "
-               "sentence only.\n"
+               "Then one short paragraph: offer the TWO additional designs "
+               "named in the user message as options that also fit their "
+               "industry, each with its demo link, one sentence only.\n"
                "Then one sentence pointing at the demo (what to open).\n"
                "Close per the ENDING rule: offer to do something for them "
                "or an easy preference question. NEVER ask about their "
@@ -662,12 +740,14 @@ def build_request(c, site_text, history=""):
                "SUBJECT: short, natural, properly capitalized (the reply keeps "
                "the thread subject, but output one anyway)."
                "\nOutput:\nSUBJECT: [subject]\nBODY:\n[body]")
-        m_theme, m_preset, m_url = main_pick(c["industry"])
+        m_preset = followup_main(c)
+        extras = secondary_presets(c["industry"], exclude=(m_preset,))
         user = ("Store: " + store + "\nIndustry: " + c["industry"] +
-                "\nMAIN preset (the ONE product we sell them): " + m_preset +
-                " design of the " + m_theme + " theme (" + CATALOG[m_theme]["price"] +
-                "), demo: " + m_url +
-                "\nOther themes for a one-line alternatives mention: " + suggested_links +
+                "\nMAIN preset (remind them of it, keep selling it): " +
+                preset_ref(m_preset) +
+                "\nADDITIONAL options (exactly these two, each with its link, "
+                "offered as designs that also fit their industry): " +
+                "; ".join(preset_ref(x) for x in extras) +
                 "\n\nPrevious emails in this thread:\n" + (history or "(unavailable)") +
                 "\n\nWrite the follow-up. It must build on the thread above "
                 "without repeating it.")
@@ -697,12 +777,10 @@ def build_request(c, site_text, history=""):
                "Total body 60-110 words.\n"
                "SUBJECT: short, natural, properly capitalized."
                "\nOutput:\nSUBJECT: [subject]\nBODY:\n[body]")
-        m_theme, m_preset, m_url = main_pick(c["industry"])
+        m_preset = followup_main(c)
         user = ("Store: " + store + "\nIndustry: " + c["industry"] +
-                "\nMAIN preset (the ONE product we sell them): " + m_preset +
-                " design of the " + m_theme + " theme (" + CATALOG[m_theme]["price"] +
-                "), demo: " + m_url +
-                "\nOther themes for a one-line alternatives mention: " + suggested_links +
+                "\nMAIN preset (remind them of it, keep selling it): " +
+                preset_ref(m_preset) +
                 "\n\nPrevious emails in this thread:\n" + (history or "(unavailable)") +
                 "\n\nWrite the value follow-up. It must add something new versus "
                 "the thread above.")
@@ -739,11 +817,10 @@ def build_request(c, site_text, history=""):
 ALL_PRESET_NAMES = {pr: th for th, t in CATALOG.items() for pr in t.get("presets", [])}
 
 
-def validate_body(c, body):
+def validate_body(c, body, allowed_presets):
     """Code-level guard (not a prompt): every link must be one of ours, and any
-    preset named in the body must belong to the industry's main theme. Returns
-    an error string or None."""
-    m_theme, m_preset, m_url = main_pick(c["industry"])
+    preset named in the body must be in allowed_presets AND carry its own
+    theme's URL. Returns an error string or None."""
     allowed = {REGISTRY, SITE} | {t["link"] for t in CATALOG.values()} | {
         t["link"] + "/presets/" + pr.lower()
         for th, t in CATALOG.items() for pr in t.get("presets", [])}
@@ -751,10 +828,16 @@ def validate_body(c, body):
         if link.rstrip('.,;:') not in allowed:
             return "disallowed link: " + link
     for pr, th in ALL_PRESET_NAMES.items():
-        if re.search(r"\b" + re.escape(pr) + r"\b", body) and pr.lower() != th.lower():
-            # preset named: its theme must be the main theme AND it must be the main preset
-            if th != m_theme or pr != m_preset:
-                return "wrong preset mentioned: %s (belongs to %s; main=%s/%s)" % (pr, th, m_theme, m_preset)
+        if pr.lower() == th.lower():
+            continue  # base-name presets equal the theme name
+        if re.search(r"\b" + re.escape(pr) + r"\b", body):
+            if pr not in allowed_presets:
+                return "preset not allowed here: " + pr
+            # if its URL appears, it must be the CORRECT theme's preset URL
+            wrong = [u for u in re.findall(r"https?://themes\.shopify\.com/themes/[a-z]+/presets/" + pr.lower(), body)
+                     if u != preset_url(pr)]
+            if wrong:
+                return "preset %s linked to wrong theme: %s" % (pr, wrong[0])
     return None
 
 
@@ -763,8 +846,11 @@ def parse_email(c, ai_text, primary, alt):
     template (verbatim from «Parse Email») when the model output is unusable.
     Appends the signature and returns the send + sheet payload dict."""
     text = ai_text or ""
-    subject, body = "", ""
+    subject, body, chosen_preset = "", "", ""
     if text:
+        pm = re.search(r"PRESET:\s*([A-Za-z]+)", text)
+        if pm and pm.group(1) in PRESETS:
+            chosen_preset = pm.group(1)
         sm = re.search(r"SUBJECT:\s*(.+?)(?:\n|$)", text, re.I)
         bm = re.search(r"BODY:\s*([\s\S]+)", text, re.I)
         subject = sm.group(1).strip() if sm else ""
@@ -827,7 +913,13 @@ def parse_email(c, ai_text, primary, alt):
 
     # Code-level link/preset guard: a letter with a foreign link, a preset of
     # the wrong theme, or the wrong preset NEVER goes out. AI draft -> fallback.
-    err = validate_body(c, body)
+    if c["touch"] == 1:
+        main_pr = chosen_preset or primary_preset(c["industry"])
+        allowed_pr = {main_pr}
+    else:
+        main_pr = followup_main(c)
+        allowed_pr = {main_pr} | set(secondary_presets(c["industry"], exclude=(main_pr,)))
+    err = validate_body(c, body, allowed_pr)
     if err and ai_text:
         print("  [GUARD] AI draft rejected (" + err + ") -> safe fallback template")
         return parse_email(c, "", primary, alt)
@@ -836,7 +928,11 @@ def parse_email(c, ai_text, primary, alt):
     next_status = ("Sent" if c["touch"] == 1 else
                    "Followup1" if c["touch"] == 2 else
                    "Followup2" if c["touch"] == 3 else "Sequence Done")
-    suggested = ", ".join(primary + alt) if c["touch"] == 1 else c["suggested"]
+    if c["touch"] == 1:
+        suggested = (main_pr + " @ " + PRESETS[main_pr]["theme"] + ", " +
+                     ", ".join(n for n in (primary + alt) if n != PRESETS[main_pr]["theme"]))
+    else:
+        suggested = c["suggested"]
     return {
         "email": c["email"], "subject": subject, "body": body, "touch": c["touch"],
         "next_status": next_status, "thread_id": c["thread_id"],
