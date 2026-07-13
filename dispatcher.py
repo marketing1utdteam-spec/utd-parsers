@@ -60,9 +60,9 @@ SENDERS = [
     {"task": "ecom_serge", "script": "ecom_sender.py", "env": _env_serge(),
      "window": (7, 21), "weekdays_only": False, "cap": 30, "gap_min": 22},
     {"task": "infl_sergey", "script": "influencer_sender.py", "env": {},
-     "window": (0, 23), "weekdays_only": False, "cap": 10, "gap_min": 75},
+     "window": (0, 23), "weekdays_only": False, "cap": 5, "gap_min": 75},
     {"task": "infl_serge", "script": "influencer_sender.py", "env": _env_serge(),
-     "window": (0, 23), "weekdays_only": False, "cap": 10, "gap_min": 75},
+     "window": (0, 23), "weekdays_only": False, "cap": 5, "gap_min": 75},
 ]
 
 ALWAYS = [

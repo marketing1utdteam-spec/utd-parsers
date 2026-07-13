@@ -1,0 +1,29 @@
+name: Backfill Ecom Contacts (one-off)
+
+on:
+  workflow_dispatch:
+    inputs:
+      file:
+        description: "JSON file of recovered records"
+        default: "data/backfill_ecom_0712.json"
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install deps
+        run: pip install -r requirements.txt
+      - name: Backfill
+        env:
+          STATE_DIR: ./data
+          GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+          ECOM_SHEET_ID: ${{ vars.ECOM_SHEET_ID }}
+          ECOM_SHEET_TAB: 'Ecom Contacts'
+        run: python backfill.py "${{ inputs.file }}"

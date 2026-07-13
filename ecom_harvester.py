@@ -1258,7 +1258,7 @@ class SheetsUploader:
         self.spreadsheet_id = spreadsheet_id
         self.worksheet_name = worksheet_name
         self.creds_file     = creds_file
-        self._ws = None; self._ok = False; self._sent = 0
+        self._ws = None; self._ok = False; self._sent = 0; self._next_row = None
 
     def connect(self) -> bool:
         if not self.spreadsheet_id:
@@ -1285,6 +1285,13 @@ class SheetsUploader:
             if self._ws is None:
                 log.error("  No worksheet found."); return False
             self._ok = True
+            # Cache the append cursor ONCE. Re-reading the whole sheet on every
+            # flush (get_all_values on 1000+ rows) burns the Sheets read quota
+            # and was the cause of the 429s that silently dropped 218 rows.
+            try:
+                self._next_row = len(self._ws.get_all_values()) + 1
+            except Exception:
+                self._next_row = None
             log.info(f"  ✅ Google Sheets ready: tab='{self._ws.title}' in '{ss.title}'")
             return True
         except Exception as e:
@@ -1312,14 +1319,19 @@ class SheetsUploader:
         if not self._ok or not self._ws or not records:
             return False
         rows = [_row_values(r) for r in records]
-        for attempt in range(1, 4):
+        for attempt in range(1, 6):
             try:
-                next_row = len(self._ws.get_all_values()) + 1   # true end
+                # Use the cached cursor; only re-read the sheet if we don't have
+                # one yet or a prior attempt in this call may have drifted it.
+                if self._next_row is None:
+                    self._next_row = len(self._ws.get_all_values()) + 1
+                next_row = self._next_row
                 self._ws.update(
                     range_name=f"A{next_row}",
                     values=rows,
                     value_input_option="USER_ENTERED",
                 )
+                self._next_row = next_row + len(rows)
                 self._sent += len(rows)
                 log.info(f"  🟢 Sheets: +{len(rows)} rows at A{next_row} "
                          f"(session {self._sent})")
@@ -1327,12 +1339,16 @@ class SheetsUploader:
             except Exception as e:
                 err = str(e).lower()
                 if any(k in err for k in ("429", "quota", "rate")):
-                    time.sleep(30 * attempt)
+                    log.warning(f"  Sheets rate-limited (attempt {attempt}/5): {str(e)[:120]}")
+                    self._next_row = None          # force a fresh cursor next try
+                    time.sleep(20 * attempt)
                 elif "401" in err or "403" in err:
                     log.error(f"  Sheets auth error: {e}"); self._ok = False; return False
                 else:
+                    log.warning(f"  Sheets write error (attempt {attempt}/5): {str(e)[:120]}")
+                    self._next_row = None
                     time.sleep(6 * attempt)
-        log.error("  Sheets: 3 attempts failed — batch skipped.")
+        log.error(f"  Sheets: 5 attempts failed — batch of {len(rows)} NOT written.")
         return False
 
 # ═══════════════════════════════════════════════════════════════════
@@ -1446,10 +1462,19 @@ class EcomHarvester:
         self.running = False
 
     def _flush(self):
-        if self._buf:
-            append_to_excel(OUTPUT_EXCEL, self._buf)
-            self.sheets.append_rows(self._buf)
-            self._buf = []
+        if not self._buf:
+            return
+        append_to_excel(OUTPUT_EXCEL, self._buf)
+        ok = self.sheets.append_rows(self._buf)
+        if not ok and self.sheets._ok:
+            # Sheet write failed (not a disabled-Sheets run). Roll the dedup
+            # entries back so these contacts can be re-collected next run
+            # instead of being marked "seen" forever with no row written.
+            for rec in self._buf:
+                self.state["emails"].pop(hash_key(rec["email"]), None)
+            log.warning(f"  ↩️  rolled back {len(self._buf)} dedup entries "
+                        f"(sheet write failed) — will retry next run")
+        self._buf = []
         self.state["query_counter"]     = self.qgen.counter
         self.state["used_query_hashes"] = list(self.used_hashes)
         self.state["seen_domains"]      = list(self.seen_domains)
