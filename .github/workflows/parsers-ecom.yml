@@ -40,7 +40,8 @@ jobs:
           ECOM_SHEET_ID: ${{ vars.ECOM_SHEET_ID }}
           ECOM_SHEET_TAB: 'Ecom Contacts'
           MAILBOX_PROVIDER: ''          # free gauntlet only (MX+domain+live)
-          MAX_GOOGLE_QUERIES: '150'     # 150 запросов × 2 страницы = ~300 CSE-вызовов/прогон, укладывается в 6ч-лимит GitHub
+          KEY_SLICE: '0:9'              # выделенные 9 ключей (900 CSE/день) — топ-парсер по выходу
+          MAX_GOOGLE_QUERIES: '200'     # 200 × 2 стр = ~400 вызовов/прогон × 2 прогона = 800 ≤ 900 слота
           SEARCH_PAGES: '2'             # брать 2 страницы выдачи на запрос (как в b2b)
           NOTIFY_URL: 'https://utdteam.app.n8n.cloud/webhook/utd-parser-notify'
         run: python run.py ecom

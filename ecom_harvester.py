@@ -163,6 +163,13 @@ _API_KEYS = [k.strip() for k in os.environ.get("GOOGLE_API_KEYS", "").split(",")
 _CSE_IDS  = [c.strip() for c in os.environ.get("GOOGLE_CSE_IDS", "").split(",") if c.strip()]
 API_PAIRS = [{"api_key": k, "cse_id": _CSE_IDS[i % len(_CSE_IDS)]}
              for i, k in enumerate(_API_KEYS)]
+# KEY_SLICE ("start:end") gives this parser a DEDICATED slice of the shared key
+# pool so the three parsers never compete for the same daily CSE quota (the
+# contention that caused the afternoon 429 storms). Falls back to the full pool.
+_KEY_SLICE = os.environ.get("KEY_SLICE", "").strip()
+if _KEY_SLICE and ":" in _KEY_SLICE:
+    _a, _b = _KEY_SLICE.split(":")
+    API_PAIRS = API_PAIRS[(int(_a) if _a else None):(int(_b) if _b else None)] or API_PAIRS
 
 # ─── File paths (STATE_DIR keeps logs/state on the host volume) ──
 _STATE_DIR    = os.environ.get("STATE_DIR", ".")

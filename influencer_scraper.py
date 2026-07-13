@@ -48,6 +48,12 @@ from openpyxl import Workbook, load_workbook
 # =========================================================================
 
 API_KEYS = [k.strip() for k in os.environ.get("GOOGLE_API_KEYS", "").split(",") if k.strip()]
+# KEY_SLICE ("start:end") gives this parser a DEDICATED slice of the shared key
+# pool so parsers never compete for the same daily CSE quota. Falls back to full.
+_KEY_SLICE = os.environ.get("KEY_SLICE", "").strip()
+if _KEY_SLICE and ":" in _KEY_SLICE:
+    _a, _b = _KEY_SLICE.split(":")
+    API_KEYS = API_KEYS[(int(_a) if _a else None):(int(_b) if _b else None)] or API_KEYS
 
 GOOGLE_CX_IDS = [c.strip() for c in os.environ.get("GOOGLE_CSE_IDS", "").split(",") if c.strip()]
 

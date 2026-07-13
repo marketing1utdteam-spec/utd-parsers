@@ -32,6 +32,7 @@ jobs:
           GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
           GOOGLE_API_KEYS: ${{ secrets.GOOGLE_API_KEYS }}
           GOOGLE_CSE_IDS: ${{ secrets.GOOGLE_CSE_IDS }}
+          KEY_SLICE: '16:21'         # выделенные 5 ключей (500 CSE/день) — не конкурирует с b2b/ecom
           CSE_BUDGET: '200'
           YT_BUDGET: '100'
           SEARCH_PAGES: '2'          # страниц выдачи CSE на запрос (как в b2b)

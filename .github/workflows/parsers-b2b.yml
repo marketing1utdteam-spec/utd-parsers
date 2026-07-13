@@ -34,7 +34,8 @@ jobs:
           GOOGLE_CSE_IDS: ${{ secrets.GOOGLE_CSE_IDS }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           MAILBOX_PROVIDER: ''          # free gauntlet only (MX+domain+live) — no MillionVerifier cost
-          MAX_GOOGLE_QUERIES: '350'     # 350 запросов × 2 страницы × 2 прогона = ~1400 CSE-вызовов/день (квота 2100)
+          KEY_SLICE: '9:16'             # выделенные 7 ключей (700 CSE/день) — не конкурирует с ecom/infl
+          MAX_GOOGLE_QUERIES: '170'     # 170 × 2 стр = ~340 вызовов/прогон × 2 прогона = 680 ≤ 700 слота (раньше 350 → второй прогон штормил на пустой квоте)
           SEARCH_PAGES: '2'             # брать 2 страницы выдачи на запрос (глубже, меньше повторов доменов)
           NOTIFY_URL: 'https://utdteam.app.n8n.cloud/webhook/utd-parser-notify'
           B2B_SHEET_ID: ${{ vars.B2B_SHEET_ID }}
