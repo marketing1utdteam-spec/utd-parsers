@@ -354,8 +354,11 @@ BASE = ("You are Sergey, a normal guy who works at UTD Web, an IT company that "
         "site speed (if we have speed numbers, they are already in the "
         "letter). Good endings: offer something concrete we will do for "
         "them by email ('want me to send a short list of what would change "
-        "on your store with this design? just reply'), or an easy "
-        "preference question ('which look is closer to what you want?').\n"
+        "on your store with this design? just reply'), an easy "
+        "preference question ('which look is closer to what you want?'), or "
+        "an offer to advise if they have questions about which theme fits "
+        "their store (they can also just pick one themselves on the Theme "
+        "Store).\n"
         "\n"
         "FORMAT, mandatory for EVERY email including follow-up replies:\n"
         "- line 1: a greeting, 'Hi [store or person name] team,' or 'Hi "
@@ -377,7 +380,7 @@ BASE = ("You are Sergey, a normal guy who works at UTD Web, an IT company that "
         "use their language.")
 
 MODEL = "claude-sonnet-5"
-MAX_TOKENS = 1300
+MAX_TOKENS = 2000
 
 # Signature appended to every body by the n8n «Parse Email» node.
 SIGNATURE = "\n\nBest regards,\nSergey\nUTD Web | utdweb.team"
@@ -736,11 +739,15 @@ def build_request(c, site_text, history=""):
                "5. Value line, 1 sentence: upsells/cross-sells/promo blocks "
                "are built in, that usually replaces $15-50/month of apps, so "
                "it pays for itself.\n"
-               "6. Alternatives, 1 short sentence: " +
-               ", ".join(_tref(n) for n in (primary[1:] + alt)) + ".\n"
-               "7. Easy close per the ENDING rule (offer to do something for "
-               "them, or an easy preference question; never ask about their "
-               "numbers).\n"
+               "6. CLOSING PARAGRAPH (mandatory, always include it, 2-3 short "
+               "sentences). First mention our OTHER themes as options they can "
+               "also look at: " +
+               ", ".join(_tref(n) for n in (primary[1:] + alt)) + ". Then give "
+               "them BOTH easy paths, no pressure: they can reply and we will "
+               "talk it through, or they can just pick a theme themselves on "
+               "the official Theme Store. End by offering that we are happy to "
+               "advise if they have any questions about which theme fits their "
+               "store. Warm and low-pressure; never ask about their numbers.\n"
                "SUBJECT: natural and properly capitalized, naming their niche."
                "\nOutput (the PRESET line is mandatory, it is machine-read):"
                "\nPRESET: [exact preset name you chose from the registry]"
