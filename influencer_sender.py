@@ -225,9 +225,9 @@ def run_once():
     now = _now_ts()
 
     print(f"\n· picked {email} | channel={channel or '-'}")
+    subj = pick_subject(email)
     sent = 0
     if DRY_RUN:
-        subj = pick_subject(email)
         _print_draft(email, subj, body)
         print(f"[SHEET] DRY_RUN — would set Status='Sent', Date Sent='{now}', "
               f"Thread ID=<sent msg-id> for {email}")
