@@ -42,5 +42,8 @@ jobs:
           git config user.email "utd-parser-bot@users.noreply.github.com"
           git add data/*.json 2>/dev/null || true
           git commit -m "reanimator state: $(date -u +%F\ %T)" || echo "no state changes"
-          git pull --rebase --autostash || true
-          git push || echo "nothing to push"
+          for i in 1 2 3 4 5; do
+            git pull --rebase --autostash || true
+            git push && break
+            sleep $((i*3))
+          done || echo "nothing to push"
