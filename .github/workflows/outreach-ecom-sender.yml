@@ -24,6 +24,7 @@ jobs:
         env:
           STATE_DIR: ./data
           DRY_RUN: ${{ vars.DRY_RUN || 'true' }}
+          TEST_RECIPIENT: ${{ vars.TEST_RECIPIENT }}
           GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GMAIL_APP_PW_SERGEY: ${{ secrets.GMAIL_APP_PW_SERGEY }}
