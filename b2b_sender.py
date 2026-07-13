@@ -36,6 +36,7 @@ import os
 import re
 import json
 import random
+import hashlib
 from datetime import datetime, timezone
 
 import email_common as ec
@@ -266,8 +267,12 @@ SYSTEM_PROMPT = (
     '5. NO calls or meetings, ever. Do not offer or ask for a call. End with ONE simple ask that can be answered '
     'by email, in the spirit of "reply and I\'ll send over the program details" or "reply and I\'ll walk you '
     'through how it works".\n'
-    '6. Subject line: properly capitalized and natural, like a normal work email subject (for example "UTD '
-    'referral program for agencies", not "quick question" clickbait).\n'
+    '6. Subject line MUST be unique to THIS agency — tie it to their niche, their work, or the one '
+    'observation you make in the email. Vary it every single time; two different agencies must never get '
+    'the same subject. Do NOT use the boilerplate phrase "UTD referral program for agencies" or any fixed '
+    'template line. Properly capitalized, natural, like a real work email subject, never clickbait. '
+    'STYLE examples only (invent your own, do not copy): "A partner idea for your Shopify builds", '
+    '"Earning on the themes you already recommend", "For [what they do] — a referral angle".\n'
     '7. If the website content is clearly in a language other than English, write the entire email in that '
     'language. Otherwise write in English.'
 )
@@ -284,7 +289,8 @@ def build_claude_request(contact, html):
         'as long as it needs to be and no longer. '
         'Ground it in ONE concrete observation from the website content above, mentioned naturally. '
         'Reply ONLY in this exact format:\n'
-        'SUBJECT: [natural, properly capitalized subject line, no em dash, no forbidden words]\n'
+        'SUBJECT: [a subject SPECIFIC to this agency — tie it to their niche or your observation; '
+        'unique, not a generic/boilerplate line, no em dash, no forbidden words]\n'
         'BODY:\n'
         '[email body: greeting line, blank line, paragraphs separated by blank lines, no signature, no sign-off]'
     )
@@ -340,11 +346,30 @@ def strip_trailing_signoff(body):
 #   PARSE + CLEAN EMAIL  (verbatim from «Parse + Clean Email»)
 # ═══════════════════════════════════════════════════════════════════
 
+# Varied fallback subjects (used only when Claude fails to return a subject) —
+# picked by a stable hash of the company so no two agencies get the same line.
+_FALLBACK_SUBJECTS = [
+    "A referral idea for your agency",
+    "Earning on the Shopify themes you recommend",
+    "A partner angle for your Shopify builds",
+    "For agencies that build Shopify stores",
+    "A theme referral idea worth a look",
+    "Partnering with UTD on theme sales",
+    "An idea for the stores you build",
+    "A commission angle on Shopify themes",
+]
+
+
+def _fallback_subject(company_name):
+    h = int(hashlib.sha256((company_name or "x").encode("utf-8")).hexdigest(), 16)
+    return _FALLBACK_SUBJECTS[h % len(_FALLBACK_SUBJECTS)]
+
+
 def _fallback_text(company_name):
     """The no-AI fallback body from the «Parse + Clean Email» catch block
     (used when Claude returns nothing / an unparseable response)."""
     return (
-        'SUBJECT: UTD Referral program: partnership invitation\n'
+        'SUBJECT: ' + _fallback_subject(company_name) + '\n'
         'BODY:\n'
         'Hi ' + company_name + ' team,\n\n'
         'Your work caught our attention, and we selected your company for the UTD Referral program.\n\n'
@@ -371,7 +396,7 @@ def parse_and_clean(text, company_name):
 
     subm = re.search(r"SUBJECT:\s*(.+?)(?:\n|$)", text, re.I)
     bodm = re.search(r"BODY:\n([\s\S]+)", text, re.I)
-    subject = subm.group(1).strip() if subm else "UTD Referral program: partnership invitation"
+    subject = subm.group(1).strip() if subm else _fallback_subject(company_name)
     if bodm:
         body = bodm.group(1).strip()
     else:
@@ -396,7 +421,7 @@ def build_email_template(contact):
     default AI path). Returns {email_subject, email_body}."""
     raw = (contact.get("company_name") or "").strip()
     company = raw if (raw and raw.lower() != "unknown" and len(raw) < 60) else "your team"
-    subject = "Partnership opportunity — UTD Referral program"
+    subject = _fallback_subject(raw or company)
     body = (
         f"Hi {company},\n\n"
         "I'm reaching out from UTD Web (utdweb.team), a Shopify theme studio with 6 themes and 30 ready-made designs on "

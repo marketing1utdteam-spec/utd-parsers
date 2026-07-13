@@ -46,7 +46,7 @@ import email_common as ec
 from b2b_sender import (fetch_company_website, _clean_site_text,
                         print_prompt_for_review, strip_em_dashes,
                         strip_trailing_signoff, clean_company_name,
-                        ensure_greeting)
+                        ensure_greeting, _fallback_subject)
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -406,7 +406,7 @@ def _original_subject(contact, thread):
                 return re.sub(r"^(?:re|fwd?):\s*", "", s, flags=re.I)
     if contact.get("orig_subject"):
         return contact["orig_subject"]
-    return "UTD Referral program: partnership invitation"
+    return _fallback_subject(contact.get("company_name") or "")
 
 
 def build_followup_email(contact):
