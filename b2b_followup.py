@@ -112,6 +112,9 @@ def is_valid(e):
     parts = e.split("@")
     if len(parts) != 2 or "." not in parts[1]:
         return False
+    # junk guard (e.g. '7@g.ebe'): sane local part and a real-looking domain
+    if len(parts[0]) < 2 or len(parts[1]) < 6 or len(parts[1].split(".")[-1]) < 2:
+        return False
     if re.match(r"^[0-9a-f]{20,}$", parts[0], re.I):
         return False
     return True
