@@ -507,8 +507,16 @@ def measure_pagespeed(url):
         key = os.environ.get("PAGESPEED_API_KEY", "").strip()
         if key:
             api += "&key=" + key
-        r = requests.get(api, timeout=70)
-        d = r.json()
+        d = None
+        for _attempt in range(3):
+            r = requests.get(api, timeout=70)
+            if r.status_code == 200:
+                d = r.json(); break
+            if r.status_code == 429:  # keyless daily quota; a key fixes this
+                import time as _t; _t.sleep(2 * (_attempt + 1)); continue
+            break
+        if d is None:
+            return None, None
         lh = d.get("lighthouseResult", {})
         score = lh.get("categories", {}).get("performance", {}).get("score")
         lcp = lh.get("audits", {}).get("largest-contentful-paint", {}).get("numericValue")
