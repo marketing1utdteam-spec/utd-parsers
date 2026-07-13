@@ -881,16 +881,38 @@ def parse_email(c, ai_text, primary, alt):
     """Parse Claude's SUBJECT/BODY output; fall back to the hard-coded per-touch
     template (verbatim from «Parse Email») when the model output is unusable.
     Appends the signature and returns the send + sheet payload dict."""
-    text = ai_text or ""
+    text = (ai_text or "").strip()
     subject, body, chosen_preset = "", "", ""
     if text:
         pm = re.search(r"PRESET:\s*([A-Za-z]+)", text)
         if pm and pm.group(1) in PRESETS:
             chosen_preset = pm.group(1)
+        # strip the machine-only PRESET line so it never leaks into the body
+        text = re.sub(r"^\s*PRESET:.*$", "", text, flags=re.I | re.M).strip()
         sm = re.search(r"SUBJECT:\s*(.+?)(?:\n|$)", text, re.I)
         bm = re.search(r"BODY:\s*([\s\S]+)", text, re.I)
-        subject = sm.group(1).strip() if sm else ""
-        body = bm.group(1).strip() if bm else ""
+        if sm and bm:
+            subject = sm.group(1).strip()
+            body = bm.group(1).strip()
+        else:
+            # TOLERANT: Claude wrote a real letter without the rigid markers.
+            # NEVER discard good Claude text for the wooden fallback — use it.
+            # Derive the subject from a leading "Subject:"-ish line if present,
+            # otherwise from the greeting/niche; the rest is the body.
+            lines = text.splitlines()
+            if sm:  # only SUBJECT: present
+                subject = sm.group(1).strip()
+                body = re.sub(r"^\s*SUBJECT:.*$", "", text, flags=re.I | re.M).strip()
+            elif lines and re.match(r"(?i)^\s*(hi|hello|hey)\b", lines[0]):
+                body = text
+                subject = ("Shopify themes for your "
+                           + (c["industry"].lower() if c["industry"] != "Other" else "store")
+                           + " store")
+            elif len(text) > 60:  # a body without a greeting -> add one, keep text
+                body = "Hi " + (c["store_name"] or "there") + " team,\n\n" + text
+                subject = ("Shopify themes for your "
+                           + (c["industry"].lower() if c["industry"] != "Other" else "store")
+                           + " store")
 
     if not subject or not body:
         p, a = primary, alt

@@ -450,6 +450,8 @@ def process_message(account, msg, by_email, by_thread, state, stats):
         if rcpt:
             print(f"  failed recipient = {rcpt} → Status '{decision['new_status']}'")
             write_status(rcpt, decision["new_status"])
+            if route == "bounce":
+                ec.mark_bounced_everywhere(rcpt, dry_run=DRY_RUN)
         else:
             print("  failed recipient not found → sheet left untouched.")
     elif route == "escalate":

@@ -601,6 +601,8 @@ def process_message(account, msg, by_thread, by_email, pricing_by_email, state, 
         if rcpt:
             print(f"  failed recipient = {rcpt} → Sheet1 Status '{status}'")
             enqueue_contact_status(rcpt, status)
+            if route == "bounce":
+                ec.mark_bounced_everywhere(rcpt, dry_run=DRY_RUN)
         else:
             print("  failed recipient not found → Sheet1 left untouched.")
     elif route == "auto_reply":

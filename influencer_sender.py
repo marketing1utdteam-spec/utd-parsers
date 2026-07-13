@@ -54,7 +54,25 @@ STATE_FILE = os.path.join(_STATE_DIR, "influencer_sender_state.json")
 #   EMAIL TEMPLATE  (verbatim from «Build Outreach Email»)
 # ═══════════════════════════════════════════════════════════════════
 
-SUBJECT = "Shopify theme review collab — UTD Web"
+# Subject variants (owner: vary the subject so Gmail does not flag mass-identical
+# mail; no em dashes per canon). Chosen deterministically per creator email.
+SUBJECT_VARIANTS = [
+    "Shopify theme review collab with UTD Web",
+    "Theme review collab idea for your channel",
+    "Sponsored Shopify theme review, UTD Web",
+    "Collab on a Shopify theme review?",
+    "UTD Web: Shopify theme review partnership",
+    "Would you review our Shopify themes?",
+]
+
+
+def pick_subject(email):
+    import hashlib
+    h = int(hashlib.sha256((email or "x").encode()).hexdigest(), 16)
+    return SUBJECT_VARIANTS[h % len(SUBJECT_VARIANTS)]
+
+
+SUBJECT = SUBJECT_VARIANTS[0]  # kept for any legacy reference
 
 BODY_HTML = "Hi,<br><br>I've been watching your Shopify theme reviews for a while and appreciate that you focus on real merchant use cases rather than just design comparisons.<br><br>I'm Sergey from UTD Web. We're a Shopify theme development team with 5 themes and 25 presets currently available in the <a href='https://themes.shopify.com/themes?page=1&q=utd'>Shopify Theme Store</a>. We've been building themes for over 4 years, but we've spent far more time developing products than promoting them, which is probably why we haven't appeared in many review videos yet.<br><br>One thing that makes our themes different is the amount of functionality merchants get out of the box. Features like upsells, cross-sells, promotional blocks, conversion-focused sections, and other sales tools are built directly into the theme, helping reduce the need for additional apps and monthly app subscriptions.<br><br>Our themes include:<br><ul><li><a href='https://themes.shopify.com/themes/gain'>Gain</a></li><li><a href='https://themes.shopify.com/themes/ultra'>Ultra</a></li><li><a href='https://themes.shopify.com/themes/boutique'>Boutique</a></li><li><a href='https://themes.shopify.com/themes/allure'>Allure</a></li><li><a href='https://themes.shopify.com/themes/victory'>Victory</a></li></ul>You can learn more about us here:<br><a href='https://utdweb.team'>https://utdweb.team</a><br><br>We're currently looking to partner with Shopify-focused creators for sponsored reviews and showcases, and we'd love to explore a collaboration with you.<br><br>We're happy to provide full access to our themes and compensate you for your time and work. We'd also be interested in learning about your rates, preferred video formats, and sponsorship options.<br><br>If this sounds interesting, I'd be happy to share more details.<br><br>Best regards,<br>Sergey<br>UTD Web"
 
@@ -209,11 +227,12 @@ def run_once():
     print(f"\n· picked {email} | channel={channel or '-'}")
     sent = 0
     if DRY_RUN:
-        _print_draft(email, SUBJECT, body)
+        subj = pick_subject(email)
+        _print_draft(email, subj, body)
         print(f"[SHEET] DRY_RUN — would set Status='Sent', Date Sent='{now}', "
               f"Thread ID=<sent msg-id> for {email}")
     else:
-        msg_id = ec.send_email(ACCOUNT, email, SUBJECT, body)
+        msg_id = ec.send_email(ACCOUNT, email, subj, body)
         ec.update_row_by_match(SHEET_ID, SHEET_TAB, "Email", email, {
             "Status": "Sent",
             "Date Sent": now,

@@ -642,6 +642,57 @@ def update_row_by_match(sheet_id, tab, match_col, match_value, updates,
     return target_row
 
 
+# ── Universal bounce quarantine ─────────────────────────────────────
+# When ANY chain sees a delivery-failure DSN for an address, flag that
+# contact 'Bounced' in EVERY CRM sheet/tab it might live in, so no chain
+# ever emails or follows-up a dead/invalid address again. Config via env:
+#   BOUNCE_SHEETS = "sheetId:tab, sheetId:tab, ..."  (defaults below)
+def _bounce_targets():
+    raw = os.environ.get("BOUNCE_SHEETS", "").strip()
+    if raw:
+        out = []
+        for pair in raw.split(","):
+            pair = pair.strip()
+            if ":" in pair:
+                sid, tab = pair.split(":", 1)
+                out.append((sid.strip(), tab.strip()))
+        return out
+    b2b = os.environ.get("B2B_SHEET_ID", "")
+    ecom = os.environ.get("ECOM_SHEET_ID", b2b)
+    infl = os.environ.get("INFL_SHEET_ID", "")
+    t = []
+    if b2b: t.append((b2b, os.environ.get("B2B_SHEET_TAB", "IT Companies — Emails")))
+    if ecom: t.append((ecom, os.environ.get("ECOM_SHEET_TAB", "Ecom Contacts")))
+    if infl: t.append((infl, "Sheet1"))
+    return t
+
+
+def mark_bounced_everywhere(email, dry_run=False, when=None):
+    """Set Status='Bounced' for `email` in every configured CRM sheet/tab.
+    Returns count of sheets where a row was updated. Safe/no-op on failure."""
+    if not email:
+        return 0
+    when = when or datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    hits = 0
+    for sid, tab in _bounce_targets():
+        try:
+            updates = {"Status": "Bounced"}
+            hdr = read_header(sid, tab)
+            if "Date Replied" in hdr:
+                updates["Date Replied"] = when
+            if dry_run:
+                print(f"  [BOUNCE] DRY_RUN would flag {email} Bounced in {tab}")
+                hits += 1
+                continue
+            n = update_row_by_match(sid, tab, "Email", email, updates)
+            if n:
+                print(f"  [BOUNCE] {email} -> Bounced in {tab}")
+                hits += 1
+        except Exception as e:
+            print(f"  [BOUNCE] skip {tab}: {e}")
+    return hits
+
+
 def gspread_a1(row, col):
     """Convert (row, col) 1-based to an A1 reference (col letters + row)."""
     letters = ""
