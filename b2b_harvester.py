@@ -945,19 +945,43 @@ class GoogleClient:
         self.pairs    = pairs
         self.idx      = 0
         self.failures = [0] * len(pairs)
+        self.dead     = set()          # pairs out of daily quota (429/403)
         self.calls    = 0
+
+    def exhausted(self) -> bool:
+        """True once every key pair is out of quota for the day. The harvester
+        checks this and stops early instead of storming thousands of 429s."""
+        return len(self.dead) >= len(self.pairs)
+
+    def _drop(self, reason: str):
+        """Quota/forbidden → this key is done for the run; drop it for good."""
+        self.dead.add(self.idx)
+        log.warning(f"  🔻 API pair #{self.idx} dropped ({reason}); "
+                    f"{len(self.pairs) - len(self.dead)} live")
+        self._advance()
+
+    def _advance(self):
+        for _ in range(len(self.pairs)):
+            self.idx = (self.idx + 1) % len(self.pairs)
+            if self.idx not in self.dead:
+                return
 
     def _rotate(self, reason: str):
         self.failures[self.idx] += 1
-        self.idx = (self.idx + 1) % len(self.pairs)
-        log.warning(f"  🔄 API key rotated ({reason}) → pair #{self.idx}")
+        self._advance()
         time.sleep(API_ROT_WAIT)
 
     def search(self, query: str, start: int = 1, lang: str = None) -> list:
         # `lang` is an `lr` restrict-language code (e.g. 'lang_de'). When set,
         # results are restricted to that language — essential for the fresh
         # non-English veins (DE/FR/ES/...). When None, no lr → widest results.
+        if self.exhausted():
+            return []
         for _ in range(len(self.pairs)):
+            if self.exhausted():
+                break
+            if self.idx in self.dead:
+                self._advance(); continue
             pair = self.pairs[self.idx]
             try:
                 params = {"key": pair["api_key"], "cx": pair["cse_id"],
@@ -975,7 +999,8 @@ class GoogleClient:
                 if resp.status_code == 200:
                     return [it["link"] for it in resp.json().get("items", []) if "link" in it]
                 if resp.status_code in (429, 403):
-                    self._rotate(f"HTTP {resp.status_code}")
+                    # Out of daily quota (or forbidden) — drop this key for good.
+                    self._drop(f"HTTP {resp.status_code}")
                 elif resp.status_code == 400:
                     return []
                 else:
@@ -984,7 +1009,8 @@ class GoogleClient:
                 self._rotate("timeout")
             except requests.RequestException as e:
                 self._rotate(str(e)[:40])
-        log.error("  ❌ All API pairs exhausted for this query.")
+        if self.exhausted():
+            log.error("  ❌ All API pairs out of quota — stopping search.")
         return []
 
 # ═══════════════════════════════════════════════════════════════════
@@ -1434,6 +1460,10 @@ class EmailHarvester:
         added = 0
         for i, (q, lang) in enumerate(queries, 1):
             if not self.running:
+                break
+            if self.google.exhausted():
+                log.warning("  ⛔ Google quota exhausted for today — ending "
+                            "search phase early (no more keys).")
                 break
             log.info(f"\n  [G {i}/{len(queries)}] ({lang}) {q}")
             urls = []
