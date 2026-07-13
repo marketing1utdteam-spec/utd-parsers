@@ -467,6 +467,7 @@ def send_and_mark(ws, header, contact, drafted, state, stats):
         stats["sent"] += 1
         return
 
+    print(f"  → sending to {to} | subject: {subject}")
     msg_id = ec.send_email(ACCOUNT, to, subject, body)
     # Persist to CRM: Status / Date Sent / Thread ID on the exact row.
     updates = {"Status": "Sent", "Date Sent": now, "Thread ID": msg_id or ""}
