@@ -83,7 +83,6 @@ ALWAYS = [
     {"task": "ecom_auto", "script": "ecom_autoresponder.py", "env": {}},
     {"task": "infl_auto", "script": "influencer_autoresponder.py", "env": {}},
     {"task": "reply_monitor", "script": "reply_monitor.py", "env": {}},
-    {"task": "b2b_signed_notify", "script": "b2b_signed_notify.py", "env": {}},
     {"task": "infl_reminders", "script": "influencer_reminders.py", "env": {},
      "business_only": True},
 ]

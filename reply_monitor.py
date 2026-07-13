@@ -66,6 +66,49 @@ STATE_FILE = os.path.join(_STATE_DIR, "reply_monitor_state.json")
 
 DRY_RUN = os.environ.get("DRY_RUN", "true").strip().lower() in ("1", "true", "yes", "on")
 
+# ── Signed-contract alert ────────────────────────────────────────────
+# A signature counts when a B2B contact EMAILS BACK a document (the signed
+# referral contract). We watch every inbox message from a known B2B contact and,
+# if it carries a document attachment, alert the whole team once (deduped by
+# message-id under the "signed:" key in the same state file).
+DEFAULT_SIGNED_TO = (
+    "denvdavydov@gmail.com,marketing@utdweb.team,denys.davydov.utd@gmail.com,"
+    "sergey.smortkin.utd@gmail.com,george.smortkin@gmail.com"
+)
+SIGNED_NOTIFY_TO = [x.strip() for x in
+                    (os.environ.get("SIGNED_NOTIFY_TO") or DEFAULT_SIGNED_TO).split(",")
+                    if x.strip()]
+_DOC_EXTS = (".pdf", ".doc", ".docx", ".rtf", ".odt", ".pages")
+
+
+def _is_signed_doc(msg):
+    """True if the message carries a document attachment (a likely signed contract)."""
+    if not msg.get("has_attachments"):
+        return False
+    names = [str(n).lower() for n in (msg.get("attachment_names") or [])]
+    return any(n.endswith(_DOC_EXTS) for n in names)
+
+
+def notify_signed(account, contact_email, company, msg):
+    names = ", ".join(msg.get("attachment_names") or []) or "(document)"
+    subject = f"✅ Signed contract received — {company}"
+    body = (
+        "A B2B contact emailed back a document — this is the signed referral "
+        "contract.\n\n"
+        f"Company:      {company}\n"
+        f"From:         {contact_email}\n"
+        f"Subject:      {msg.get('subject', '')}\n"
+        f"Date:         {msg.get('date', '')}\n"
+        f"Attachment(s): {names}\n\n"
+        "Open the mailbox to review and countersign.\n\n"
+        "— Automated alert from the UTD outreach system"
+    )
+    if DRY_RUN:
+        print(f"[SIGNED] DRY_RUN — would alert {SIGNED_NOTIFY_TO} re {company} ({contact_email})")
+        return
+    ec.send_email(account, SIGNED_NOTIFY_TO, subject, body, from_name="UTD Outreach")
+    print(f"[SIGNED] alerted {len(SIGNED_NOTIFY_TO)} recipients re signed doc from {company}")
+
 # «Build Gmail Search Query»: BAD list + isValid(), VERBATIM.
 _BAD = ['.png', '.jpg', '.webp', '@sentry', 'ingest.sentry',
         'your-company', 'john@company', 'you@company', 'your@email',
@@ -201,6 +244,16 @@ def run_once():
                 "notified": 0}
 
     contacts = build_sent_contacts(rows)
+    # ALL B2B emails (any status) → company, for signed-document detection. Unlike
+    # the reply watch-list, this includes already-replied contacts, because the
+    # signed contract usually arrives AFTER an initial "yes, send it" reply.
+    all_b2b = {}
+    for r in rows:
+        e = str(r.get("Email", "")).strip().lower()
+        if is_valid_email(e):
+            all_b2b[e] = (str(r.get("Company", "") or r.get("Company Name", "")).strip()
+                          or "Unknown")
+    signed_alerts = 0
     print(f"CRM: {len(rows)} rows read, {len(contacts)} sent-contacts to watch.")
     if not contacts:
         print("No 'Sent'/'Follow-up Sent' contacts — nothing to monitor.")
@@ -226,6 +279,15 @@ def run_once():
 
         for msg in msgs:
             mid = msg.get("message_id", "")
+
+            # Signed-contract detection FIRST (independent of the reply flow, so it
+            # still fires even if this message was already handled as a reply).
+            frm = (msg.get("from_email", "") or "").lower()
+            if (frm in all_b2b and _is_signed_doc(msg)
+                    and not ec.is_processed(state, "signed:" + mid)):
+                notify_signed(account, frm, all_b2b[frm], msg)
+                ec.mark_processed(state, "signed:" + mid)
+                signed_alerts += 1
 
             # Cross-run dedup: this exact reply already reported before.
             if ec.is_processed(state, mid):
@@ -269,10 +331,12 @@ def run_once():
     if not DRY_RUN:
         ec.save_state(STATE_FILE, state)
 
-    print(f"\n=== done. scanned {scanned} messages, notified {notified} reply(ies). ===")
+    print(f"\n=== done. scanned {scanned} messages, notified {notified} reply(ies), "
+          f"{signed_alerts} signed-contract alert(s). ===")
     return {"parser": "reply_monitor", "dry_run": DRY_RUN,
             "sent_contacts": len(contacts), "scanned": scanned,
-            "notified": notified, "manager": MANAGER_EMAIL}
+            "notified": notified, "signed_alerts": signed_alerts,
+            "manager": MANAGER_EMAIL}
 
 
 if __name__ == "__main__":
