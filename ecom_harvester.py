@@ -1350,6 +1350,12 @@ class SheetsUploader:
                 if self._next_row is None:
                     self._next_row = len(self._ws.get_all_values()) + 1
                 next_row = self._next_row
+                # ws.update() never grows the grid — writing past row_count
+                # fails with "exceeds grid limits" (this silently dropped 218
+                # rows on 2026-07-12). Add rows first if the batch won't fit.
+                need = next_row + len(rows) - 1
+                if self._ws.row_count < need:
+                    self._ws.add_rows(need - self._ws.row_count + 50)
                 self._ws.update(
                     range_name=f"A{next_row}",
                     values=rows,

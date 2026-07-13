@@ -1395,6 +1395,11 @@ class SheetsSync:
         for attempt in range(1, 4):
             try:
                 next_row = len(self._ws.get_all_values()) + 1   # true end
+                # update() never grows the grid — writing past row_count fails
+                # with "exceeds grid limits". Add rows first if needed.
+                need = next_row + len(values) - 1
+                if self._ws.row_count < need:
+                    self._ws.add_rows(need - self._ws.row_count + 50)
                 self._ws.update(
                     range_name=f"A{next_row}",
                     values=values,

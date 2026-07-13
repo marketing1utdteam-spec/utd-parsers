@@ -53,6 +53,13 @@ def main():
     todo = [r for r in recs if r["email"].strip().lower() not in have]
     print(f"to write: {len(todo)} new rows", flush=True)
 
+    # ws.update() does NOT auto-grow the grid; writing past row_count fails with
+    # "exceeds grid limits". Grow the grid up front so every batch fits.
+    need = next_row + len(todo) + 5
+    if todo and ws.row_count < need:
+        ws.add_rows(need - ws.row_count)
+        print(f"grew grid {ws.row_count}→{need} rows", flush=True)
+
     written = 0
     for i in range(0, len(todo), 20):
         batch = todo[i:i + 20]
