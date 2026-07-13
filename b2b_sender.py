@@ -124,8 +124,8 @@ def clean_company_name(name):
 
 
 def pick_next_uncontacted(rows):
-    """Reproduce «Pick Next Uncontacted»: Status empty + valid email + Website
-    present + not a theme competitor, then choose ONE row at random.
+    """Status empty + valid email + Website present + not a theme competitor,
+    then take the FIRST (top-most) such row for strict top-to-bottom coverage.
 
     rows: list of (row_number, record_dict). Returns a contact dict
     {row_number, email, company_name, website} or None when nothing qualifies.
@@ -150,7 +150,10 @@ def pick_next_uncontacted(rows):
             candidates.append((row_number, r))
     if not candidates:
         return None
-    row_number, r = candidates[random.randrange(len(candidates))]
+    # Top-to-bottom coverage: take the FIRST (top-most) uncontacted row, not a
+    # random one — otherwise rows near the top can wait forever. rows come in
+    # sheet order, so candidates[0] is the earliest unsent contact.
+    row_number, r = candidates[0]
     website = str(r.get("Website", "")).strip()
     url = website if website.startswith("http") else "https://" + website
     # Sheet header is "Company Name"; "Company" kept as a fallback.

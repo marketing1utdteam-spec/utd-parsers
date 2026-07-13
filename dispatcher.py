@@ -27,14 +27,23 @@ import os
 import subprocess
 import sys
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 STATE_DIR = os.environ.get("STATE_DIR", ".")
 STATE_FILE = os.path.join(STATE_DIR, "dispatcher_state.json")
 
-NOW = datetime.now(timezone.utc)
+# All cold-outreach gating is in BELGIUM local time (Europe/Brussels, handles
+# CET/CEST DST automatically). GitHub Actions runs this in the cloud on a cron,
+# so sending happens 24/7 on Google's/GitHub's servers — the owner's computer
+# does NOT need to be on. The windows below simply restrict WHEN cold mail goes.
+BE = ZoneInfo("Europe/Brussels")
+NOW = datetime.now(timezone.utc).astimezone(BE)
 TODAY = NOW.strftime("%Y-%m-%d")
-WEEKDAY = NOW.weekday()  # 0=Mon .. 6=Sun
-HOUR = NOW.hour
+WEEKDAY = NOW.weekday()  # 0=Mon .. 6=Sun  (Belgium)
+HOUR = NOW.hour          # Belgium local hour
+
+# Belgium business hours for cold outreach: Mon-Fri, 09:00-17:59.
+BE_WORK = (9, 17)
 
 SERGEY = {"user_env": {}, "pw": ""}  # placeholders for readability
 
@@ -50,27 +59,33 @@ def _env_serge(extra=None):
     e.update(extra or {})
     return e
 
+# All cold senders: Belgium business hours (BE_WORK), Mon-Fri only.
 SENDERS = [
     {"task": "b2b_sergey", "script": "b2b_sender.py", "env": {},
-     "window": (0, 23), "weekdays_only": False, "cap": 20, "gap_min": 22},
+     "window": BE_WORK, "weekdays_only": True, "cap": 20, "gap_min": 22},
     {"task": "b2b_serge", "script": "b2b_sender.py", "env": _env_serge(),
-     "window": (0, 23), "weekdays_only": False, "cap": 20, "gap_min": 22},
+     "window": BE_WORK, "weekdays_only": True, "cap": 20, "gap_min": 22},
     {"task": "ecom_sergey", "script": "ecom_sender.py", "env": {},
-     "window": (7, 21), "weekdays_only": False, "cap": 30, "gap_min": 22},
+     "window": BE_WORK, "weekdays_only": True, "cap": 30, "gap_min": 22},
     {"task": "ecom_serge", "script": "ecom_sender.py", "env": _env_serge(),
-     "window": (7, 21), "weekdays_only": False, "cap": 30, "gap_min": 22},
+     "window": BE_WORK, "weekdays_only": True, "cap": 30, "gap_min": 22},
     {"task": "infl_sergey", "script": "influencer_sender.py", "env": {},
-     "window": (0, 23), "weekdays_only": False, "cap": 5, "gap_min": 75},
+     "window": BE_WORK, "weekdays_only": True, "cap": 5, "gap_min": 75},
     {"task": "infl_serge", "script": "influencer_sender.py", "env": _env_serge(),
-     "window": (0, 23), "weekdays_only": False, "cap": 5, "gap_min": 75},
+     "window": BE_WORK, "weekdays_only": True, "cap": 5, "gap_min": 75},
 ]
 
+# ALWAYS tasks run every tick, 24/7. Autoresponders/reply-monitor are inbox-
+# driven and cost nothing on an empty inbox. `business_only` tasks (proactive
+# outbound reminders) are held to Belgium business hours like cold outreach.
 ALWAYS = [
     {"task": "agency_auto", "script": "agency_autoresponder.py", "env": {}},
     {"task": "ecom_auto", "script": "ecom_autoresponder.py", "env": {}},
     {"task": "infl_auto", "script": "influencer_autoresponder.py", "env": {}},
     {"task": "reply_monitor", "script": "reply_monitor.py", "env": {}},
-    {"task": "infl_reminders", "script": "influencer_reminders.py", "env": {}},
+    {"task": "b2b_signed_notify", "script": "b2b_signed_notify.py", "env": {}},
+    {"task": "infl_reminders", "script": "influencer_reminders.py", "env": {},
+     "business_only": True},
 ]
 
 
@@ -138,7 +153,11 @@ def main():
         st[t["task"]] = rec
         print(f"· {t['task']}: sent={sent} today={rec['sent_today']}/{t['cap']} rc={rc}")
 
+    in_business = (WEEKDAY < 5) and (BE_WORK[0] <= HOUR <= BE_WORK[1])
     for t in ALWAYS:
+        if t.get("business_only") and not in_business:
+            print(f"· {t['task']}: skip (outside Belgium business hours)")
+            continue
         run_script(t["script"], t["env"], t["task"])
 
     save_state(st)

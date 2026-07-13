@@ -1,8 +1,14 @@
 name: Outreach Dispatcher
 
+# RUNS ENTIRELY IN GITHUB'S CLOUD — the owner's computer does NOT need to be on.
+# GitHub throttles the schedule cron hard (it fired ~1×/day), so the workflow
+# SELF-PERPETUATES: each run ends by triggering the next via DISPATCH_PAT, giving
+# continuous coverage with no local machine involved. The schedule cron is only a
+# restart safety-net in case the self-dispatch chain ever breaks. Public repo =
+# unlimited free Actions minutes, so this is free.
 on:
   schedule:
-    - cron: '*/15 * * * *'
+    - cron: '7 */3 * * *'   # safety-net restart (throttled; only used if the chain breaks)
   workflow_dispatch: {}
 
 permissions:
@@ -38,6 +44,7 @@ jobs:
           UTD_MAIL_SERHII: ${{ vars.UTD_MAIL_SERHII }}
           UTD_MAIL_DENYS: ${{ vars.UTD_MAIL_DENYS }}
           B2B_SHEET_ID: ${{ vars.B2B_SHEET_ID }}
+          SIGNED_NOTIFY_TO: ${{ vars.SIGNED_NOTIFY_TO }}   # who gets the "contract signed" alert (empty → code default)
           INFL_SHEET_ID: ${{ vars.INFL_SHEET_ID }}
           ECOM_SHEET_ID: ${{ vars.ECOM_SHEET_ID }}
           ECOM_SHEET_TAB: 'Ecom Contacts'
@@ -56,3 +63,16 @@ jobs:
             git push && break
             sleep $((i*3))
           done || echo "nothing to push"
+
+      # Cloud self-perpetuation: wait a bit (tick spacing), then trigger the next
+      # run. Uses DISPATCH_PAT because the default GITHUB_TOKEN cannot start a new
+      # workflow run. This is what keeps sending alive with the Mac powered off.
+      - name: Schedule next cycle
+        if: always()
+        run: |
+          sleep 600
+          curl -s -o /dev/null -w "re-dispatch HTTP %{http_code}\n" -X POST \
+            -H "Authorization: token ${{ secrets.DISPATCH_PAT }}" \
+            -H "Accept: application/vnd.github+json" \
+            -d '{"ref":"main"}' \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/outreach-dispatcher.yml/dispatches"

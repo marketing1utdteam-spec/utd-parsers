@@ -169,7 +169,8 @@ def pick_next(rows, state):
             candidates.append(r)
     if not candidates:
         return None
-    r = random.choice(candidates)
+    # Top-to-bottom coverage: first (top-most) uncontacted creator, not random.
+    r = candidates[0]
     em = str(r["Email"]).strip()
     return {
         "email": em,

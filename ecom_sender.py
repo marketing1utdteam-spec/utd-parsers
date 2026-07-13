@@ -484,13 +484,11 @@ def select_leads(rows):
         })
     if not elig:
         return []
-    # follow-ups (touch>1) first, then new leads
-    elig.sort(key=lambda e: 0 if e["touch"] > 1 else 1)
-    if elig[0]["touch"] > 1:
-        pool = [e for e in elig if e["touch"] > 1]
-    else:
-        pool = elig
-    return pool
+    # Owner wants strict TOP-TO-BOTTOM coverage: march the sheet in row order and
+    # do whatever touch is due for each row (a new lead OR a due follow-up), so
+    # unsent contacts at the top are never starved by follow-ups lower down.
+    elig.sort(key=lambda e: e["row_number"])
+    return elig
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -1149,8 +1147,8 @@ def run_once():
         return {"parser": "ecom_sender", "dry_run": DRY_RUN, "eligible": 0,
                 "selected": 0, "sent": 0}
 
-    # «Pick Next» picks one at random; LEAD_LIMIT lets a GHA run send a few.
-    random.shuffle(pool)
+    # Top-to-bottom: pool is already in sheet row order — do NOT shuffle, so the
+    # earliest unsent/overdue row is always handled first (LEAD_LIMIT per run).
     stats = {}
     selected = 0
     sent = 0
