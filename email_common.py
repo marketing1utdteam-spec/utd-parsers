@@ -661,6 +661,9 @@ ANTHROPIC_VERSION = "2023-06-01"
 DEFAULT_MODEL = "claude-sonnet-5"
 
 
+CLAUDE_CALLS = {"n": 0}  # per-run telemetry: visible in GHA logs
+
+
 def call_claude(system, user, model=DEFAULT_MODEL, max_tokens=1500,
                 api_key=None, timeout=90, retries=2):
     """Call the Anthropic Messages API and return the assistant text.
@@ -672,6 +675,8 @@ def call_claude(system, user, model=DEFAULT_MODEL, max_tokens=1500,
     """
     if requests is None:
         return ""
+    CLAUDE_CALLS["n"] += 1
+    print(f"  [CLAUDE] call #{CLAUDE_CALLS['n']} model={model} in~{(len(system)+len(user))//4}tok")
     key = api_key or os.environ.get("ANTHROPIC_API_KEY", "").strip()
     if not key:
         return ""
