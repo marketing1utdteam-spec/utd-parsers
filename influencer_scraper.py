@@ -347,16 +347,40 @@ class KeyRotator:
     def current(self):
         return self.keys[self.idx]
 
+    def _advance(self):
+        for _ in range(len(self.keys)):
+            self.idx = (self.idx + 1) % len(self.keys)
+            if self.idx not in self.exhausted:
+                return
+
     def rotate(self, reason="quota"):
-        logging.warning(f"Key idx {self.idx} exhausted ({reason}), rotating.")
+        """HARD drop — key is out of DAILY quota; dead for the run."""
+        logging.warning(f"Key idx {self.idx} out of daily quota ({reason}), dropping.")
         self.exhausted.add(self.idx)
-        self.idx = (self.idx + 1) % len(self.keys)
+        self._advance()
+
+    def soft_rotate(self, reason="rate", wait=4.0):
+        """Transient per-minute rate limit — pause and move to another key, but
+        keep this one alive (marking it dead would burn healthy keys)."""
+        logging.info(f"Key idx {self.idx} rate-limited ({reason}); pause {wait}s, next key.")
+        time.sleep(wait)
+        self._advance()
 
     def all_exhausted(self):
         return len(self.exhausted) >= len(self.keys)
 
     def cx(self):
         return GOOGLE_CX_IDS[self.idx % len(GOOGLE_CX_IDS)]
+
+
+def _is_daily_limit(resp) -> bool:
+    """DAILY quota (drop key) vs transient rate limit (pause, keep key)."""
+    try:
+        body = resp.text.lower()
+    except Exception:
+        return False
+    return any(k in body for k in (
+        "dailylimitexceeded", "quotaexceeded", "quota exceeded", "daily limit"))
 
 
 cse_rotator = KeyRotator(API_KEYS)
@@ -523,7 +547,10 @@ def cse_search(query, start=1):
             total = int(data.get("searchInformation", {}).get("totalResults", "0"))
             return data.get("items", []), None, total
         if r.status_code in (403, 429):
-            cse_rotator.rotate("quota/rate")
+            if _is_daily_limit(r):
+                cse_rotator.rotate("daily")
+            else:
+                cse_rotator.soft_rotate("rate")
             return [], "rotated", 0
         return [], f"http_{r.status_code}", 0
     except Exception as exc:
@@ -540,7 +567,10 @@ def yt_api(endpoint, params):
             if r.status_code == 200:
                 return r.json(), None
             if r.status_code in (403, 429):
-                yt_rotator.rotate("quota/rate")
+                if _is_daily_limit(r):
+                    yt_rotator.rotate("daily")
+                else:
+                    yt_rotator.soft_rotate("rate")
                 continue
             return None, f"http_{r.status_code}"
         except Exception as exc:

@@ -1032,6 +1032,18 @@ class GoogleClient:
         self._advance()
         time.sleep(API_ROT_WAIT)
 
+    @staticmethod
+    def _is_daily_limit(resp) -> bool:
+        """DAILY quota kill (drop key for the day) vs transient per-minute rate
+        limit (pause + try another key, keep this one alive). Marking a
+        rate-limited key dead would falsely burn healthy keys during a burst."""
+        try:
+            body = resp.text.lower()
+        except Exception:
+            return False
+        return any(k in body for k in (
+            "dailylimitexceeded", "quotaexceeded", "quota exceeded", "daily limit"))
+
     def search(self, query: str, start: int = 1) -> list:
         if self.exhausted():
             return []
@@ -1054,7 +1066,12 @@ class GoogleClient:
                 if resp.status_code == 200:
                     return [it["link"] for it in resp.json().get("items", []) if "link" in it]
                 if resp.status_code in (429, 403):
-                    self._drop(f"HTTP {resp.status_code}")
+                    if self._is_daily_limit(resp):
+                        self._drop(f"HTTP {resp.status_code} daily")
+                    else:
+                        # Transient rate limit — pause and try another key,
+                        # but keep this one alive (it isn't out of daily quota).
+                        self._rotate(f"HTTP {resp.status_code} rate")
                 elif resp.status_code == 400:
                     return []
                 else:
