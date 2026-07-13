@@ -1,9 +1,7 @@
 name: Ecom — Sequence Send (serge)
 
 on:
-  schedule:
-    - cron: '15,45 7-21 * * *'
-  workflow_dispatch: {}
+  workflow_dispatch: {}   # schedule moved to outreach-dispatcher
 
 permissions:
   contents: write

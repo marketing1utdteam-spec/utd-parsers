@@ -1,9 +1,7 @@
 name: B2B — Cold Send
 
 on:
-  schedule:
-    - cron: '0,30 8-17 * * 1-5'
-  workflow_dispatch: {}
+  workflow_dispatch: {}   # schedule moved to outreach-dispatcher
 
 permissions:
   contents: write

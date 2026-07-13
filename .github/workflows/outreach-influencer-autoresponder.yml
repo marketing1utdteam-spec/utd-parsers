@@ -1,9 +1,7 @@
 name: Influencer — Autoresponder
 
 on:
-  schedule:
-    - cron: '*/15 * * * *'
-  workflow_dispatch: {}
+  workflow_dispatch: {}   # schedule moved to outreach-dispatcher
 
 permissions:
   contents: write
