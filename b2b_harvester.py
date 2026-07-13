@@ -980,17 +980,20 @@ class GoogleClient:
         time.sleep(API_ROT_WAIT)
 
     @staticmethod
-    def _is_daily_limit(resp) -> bool:
-        """Distinguish a DAILY quota kill (drop the key for the day) from a
-        transient per-minute rate limit (just pause and try another key — the
-        key is NOT out of quota). Marking a rate-limited key dead would falsely
-        burn healthy keys during a burst."""
+    def _is_transient_rate(resp) -> bool:
+        """True ONLY for a transient per-minute/second rate limit — pause and try
+        another key, keeping this one alive (a burst must not burn healthy keys).
+        Everything else (daily quota, accessNotConfigured, no-access, invalid,
+        disabled) is permanent for this run → drop the key so we don't grind."""
         try:
             body = resp.text.lower()
         except Exception:
             return False
+        if any(k in body for k in ("per day", "daily", "dailylimitexceeded")):
+            return False
         return any(k in body for k in (
-            "dailylimitexceeded", "quotaexceeded", "quota exceeded", "daily limit"))
+            "ratelimitexceeded", "userratelimitexceeded", "user rate limit",
+            "per minute", "perminute", "too many requests"))
 
     def search(self, query: str, start: int = 1, lang: str = None) -> list:
         # `lang` is an `lr` restrict-language code (e.g. 'lang_de'). When set,
@@ -1020,12 +1023,14 @@ class GoogleClient:
                 if resp.status_code == 200:
                     return [it["link"] for it in resp.json().get("items", []) if "link" in it]
                 if resp.status_code in (429, 403):
-                    if self._is_daily_limit(resp):
-                        self._drop(f"HTTP {resp.status_code} daily")
-                    else:
-                        # Transient rate limit — pause and try another key,
-                        # but keep this one alive (it isn't out of daily quota).
+                    if self._is_transient_rate(resp):
+                        # Momentary rate limit — pause and try another key, but
+                        # keep this one alive (a burst must not burn good keys).
                         self._rotate(f"HTTP {resp.status_code} rate")
+                    else:
+                        # Daily quota OR permanent block (accessNotConfigured /
+                        # no-access / invalid) — drop this key for the run.
+                        self._drop(f"HTTP {resp.status_code}")
                 elif resp.status_code == 400:
                     return []
                 else:

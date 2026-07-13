@@ -1033,16 +1033,20 @@ class GoogleClient:
         time.sleep(API_ROT_WAIT)
 
     @staticmethod
-    def _is_daily_limit(resp) -> bool:
-        """DAILY quota kill (drop key for the day) vs transient per-minute rate
-        limit (pause + try another key, keep this one alive). Marking a
-        rate-limited key dead would falsely burn healthy keys during a burst."""
+    def _is_transient_rate(resp) -> bool:
+        """True ONLY for a transient per-minute/second rate limit — pause and try
+        another key, keeping this one alive. Everything else (daily quota,
+        accessNotConfigured, no-access, invalid, disabled) is permanent for the
+        run → drop the key so we don't grind on dead keys."""
         try:
             body = resp.text.lower()
         except Exception:
             return False
+        if any(k in body for k in ("per day", "daily", "dailylimitexceeded")):
+            return False
         return any(k in body for k in (
-            "dailylimitexceeded", "quotaexceeded", "quota exceeded", "daily limit"))
+            "ratelimitexceeded", "userratelimitexceeded", "user rate limit",
+            "per minute", "perminute", "too many requests"))
 
     def search(self, query: str, start: int = 1) -> list:
         if self.exhausted():
@@ -1066,12 +1070,13 @@ class GoogleClient:
                 if resp.status_code == 200:
                     return [it["link"] for it in resp.json().get("items", []) if "link" in it]
                 if resp.status_code in (429, 403):
-                    if self._is_daily_limit(resp):
-                        self._drop(f"HTTP {resp.status_code} daily")
-                    else:
-                        # Transient rate limit — pause and try another key,
-                        # but keep this one alive (it isn't out of daily quota).
+                    if self._is_transient_rate(resp):
+                        # Momentary rate limit — pause and try another key, but
+                        # keep this one alive (a burst must not burn good keys).
                         self._rotate(f"HTTP {resp.status_code} rate")
+                    else:
+                        # Daily quota OR permanent block — drop for the run.
+                        self._drop(f"HTTP {resp.status_code}")
                 elif resp.status_code == 400:
                     return []
                 else:

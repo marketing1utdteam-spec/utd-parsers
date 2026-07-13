@@ -32,9 +32,10 @@ jobs:
           GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
           GOOGLE_API_KEYS: ${{ secrets.GOOGLE_API_KEYS }}
           GOOGLE_CSE_IDS: ${{ secrets.GOOGLE_CSE_IDS }}
-          KEY_SLICE: '16:21'         # выделенные 5 ключей (500 CSE/день) — не конкурирует с b2b/ecom
-          CSE_BUDGET: '200'
-          YT_BUDGET: '100'
+          # Общий пул ~7 рабочих CSE-ключей; из них YouTube API есть только у 3.
+          # Без KEY_SLICE. Бюджет ужат под общий лимит ~700 CSE/день на все парсеры.
+          CSE_BUDGET: '50'           # 50 × 2 прогона = 100 CSE/день
+          YT_BUDGET: '60'
           SEARCH_PAGES: '2'          # страниц выдачи CSE на запрос (как в b2b)
           # Пороги ослаблены 2026-07-13 — прежние (500/4/3) отсеивали почти всё,
           # выход был ~10 контактов/день. Ниже пороги = больше валидных креаторов.

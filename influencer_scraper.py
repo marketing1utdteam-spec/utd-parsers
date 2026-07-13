@@ -373,14 +373,19 @@ class KeyRotator:
         return GOOGLE_CX_IDS[self.idx % len(GOOGLE_CX_IDS)]
 
 
-def _is_daily_limit(resp) -> bool:
-    """DAILY quota (drop key) vs transient rate limit (pause, keep key)."""
+def _is_transient_rate(resp) -> bool:
+    """True ONLY for a transient per-minute/second rate limit (pause + keep key).
+    Everything else (daily quota, accessNotConfigured, no-access, invalid,
+    disabled) is permanent for the run → drop the key so we don't grind."""
     try:
         body = resp.text.lower()
     except Exception:
         return False
+    if any(k in body for k in ("per day", "daily", "dailylimitexceeded")):
+        return False
     return any(k in body for k in (
-        "dailylimitexceeded", "quotaexceeded", "quota exceeded", "daily limit"))
+        "ratelimitexceeded", "userratelimitexceeded", "user rate limit",
+        "per minute", "perminute", "too many requests"))
 
 
 cse_rotator = KeyRotator(API_KEYS)
@@ -547,10 +552,10 @@ def cse_search(query, start=1):
             total = int(data.get("searchInformation", {}).get("totalResults", "0"))
             return data.get("items", []), None, total
         if r.status_code in (403, 429):
-            if _is_daily_limit(r):
-                cse_rotator.rotate("daily")
-            else:
+            if _is_transient_rate(r):
                 cse_rotator.soft_rotate("rate")
+            else:
+                cse_rotator.rotate("quota/blocked")
             return [], "rotated", 0
         return [], f"http_{r.status_code}", 0
     except Exception as exc:
@@ -567,10 +572,10 @@ def yt_api(endpoint, params):
             if r.status_code == 200:
                 return r.json(), None
             if r.status_code in (403, 429):
-                if _is_daily_limit(r):
-                    yt_rotator.rotate("daily")
-                else:
+                if _is_transient_rate(r):
                     yt_rotator.soft_rotate("rate")
+                else:
+                    yt_rotator.rotate("quota/blocked")
                 continue
             return None, f"http_{r.status_code}"
         except Exception as exc:
