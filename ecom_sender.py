@@ -395,7 +395,11 @@ EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$")
 
 
 def _email_ok(e):
-    return bool(e) and bool(EMAIL_RE.match(e)) and not any(b in e.lower() for b in BAD)
+    if not e or not EMAIL_RE.match(e) or any(b in e.lower() for b in BAD):
+        return False
+    dom = e.split("@")[1]
+    # junk guard: real-looking domain + valid-length TLD (e.g. 7@g.ebe)
+    return len(e.split("@")[0]) >= 2 and len(dom) >= 6 and len(dom.split(".")[-1]) >= 2
 
 
 def _days_since(d):

@@ -52,9 +52,9 @@ def _env_serge(extra=None):
 
 SENDERS = [
     {"task": "b2b_sergey", "script": "b2b_sender.py", "env": {},
-     "window": (8, 17), "weekdays_only": True, "cap": 20, "gap_min": 22},
+     "window": (0, 23), "weekdays_only": False, "cap": 20, "gap_min": 22},
     {"task": "b2b_serge", "script": "b2b_sender.py", "env": _env_serge(),
-     "window": (8, 17), "weekdays_only": True, "cap": 20, "gap_min": 22},
+     "window": (0, 23), "weekdays_only": False, "cap": 20, "gap_min": 22},
     {"task": "ecom_sergey", "script": "ecom_sender.py", "env": {},
      "window": (7, 21), "weekdays_only": False, "cap": 30, "gap_min": 22},
     {"task": "ecom_serge", "script": "ecom_sender.py", "env": _env_serge(),

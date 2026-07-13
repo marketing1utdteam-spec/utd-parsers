@@ -59,8 +59,38 @@ SUBJECT = "Shopify theme review collab — UTD Web"
 BODY_HTML = "Hi,<br><br>I've been watching your Shopify theme reviews for a while and appreciate that you focus on real merchant use cases rather than just design comparisons.<br><br>I'm Sergey from UTD Web. We're a Shopify theme development team with 5 themes and 25 presets currently available in the <a href='https://themes.shopify.com/themes?page=1&q=utd'>Shopify Theme Store</a>. We've been building themes for over 4 years, but we've spent far more time developing products than promoting them, which is probably why we haven't appeared in many review videos yet.<br><br>One thing that makes our themes different is the amount of functionality merchants get out of the box. Features like upsells, cross-sells, promotional blocks, conversion-focused sections, and other sales tools are built directly into the theme, helping reduce the need for additional apps and monthly app subscriptions.<br><br>Our themes include:<br><ul><li><a href='https://themes.shopify.com/themes/gain'>Gain</a></li><li><a href='https://themes.shopify.com/themes/ultra'>Ultra</a></li><li><a href='https://themes.shopify.com/themes/boutique'>Boutique</a></li><li><a href='https://themes.shopify.com/themes/allure'>Allure</a></li><li><a href='https://themes.shopify.com/themes/victory'>Victory</a></li></ul>You can learn more about us here:<br><a href='https://utdweb.team'>https://utdweb.team</a><br><br>We're currently looking to partner with Shopify-focused creators for sponsored reviews and showcases, and we'd love to explore a collaboration with you.<br><br>We're happy to provide full access to our themes and compensate you for your time and work. We'd also be interested in learning about your rates, preferred video formats, and sponsorship options.<br><br>If this sounds interesting, I'd be happy to share more details.<br><br>Best regards,<br>Sergey<br>UTD Web"
 
 
+VARIATION_SYS = (
+    "You rewrite an outreach email template so every copy is worded differently "
+    "while meaning EXACTLY the same. Rules:\n"
+    "- Keep the same structure, the same paragraphs in the same order, the same "
+    "HTML format with <br> breaks, the same <ul><li> theme list and ALL links "
+    "EXACTLY as they are (do not touch URLs or <a> tags).\n"
+    "- Keep every fact identical: 5 themes, 25 presets, 4+ years, full theme "
+    "access, paid work, ask for rates/formats/sponsorship options.\n"
+    "- Vary the wording naturally (roughly a third of the phrasing) so no two "
+    "copies are identical: SIMPLE everyday English, short sentences, no idioms, "
+    "no hype words (exclusive, exciting, game-changer, handpicked, curated, "
+    "unique opportunity), never an em dash.\n"
+    "- Same approximate length. Signature stays exactly: Best regards,<br>"
+    "Sergey<br>UTD Web\n"
+    "Output ONLY the rewritten HTML body, nothing else.")
+
+
 def build_body(channel):
-    """«Build Outreach Email» ignores `channel` in the body (kept for parity)."""
+    """Claude paraphrases the approved template per letter (Gmail flags mass
+    identical content as spam: real 'Message rejected' blocks were observed).
+    Meaning/structure/links stay identical; wording varies. Fallback = the
+    verbatim template when Claude is unavailable or breaks a link."""
+    try:
+        import email_common as _ec
+        varied = _ec.call_claude(VARIATION_SYS, BODY_HTML,
+                                 model="claude-sonnet-5", max_tokens=1200)
+        if varied and varied.count("<a href=") >= 6 and "utdweb.team" in varied                 and "themes/gain" in varied and "themes/victory" in varied                 and "—" not in varied:
+            return varied.strip()
+        if varied:
+            print("  [VARIATION] draft rejected by link/dash check -> template")
+    except Exception as e:
+        print(f"  [VARIATION] unavailable ({e}) -> template")
     return BODY_HTML
 
 
@@ -86,6 +116,8 @@ def is_valid(e):
     parts = e.split("@")
     if len(parts) != 2 or "." not in parts[1]:
         return False
+    if len(parts[0]) < 2 or len(parts[1]) < 6 or len(parts[1].split(".")[-1]) < 2:
+        return False  # junk guard (e.g. 7@g.ebe)
     if re.match(r"^[0-9a-f]{20,}$", parts[0], re.I):
         return False
     if re.search(r"\.{2,}", e) or e.startswith(".") or ".@" in e or "@." in e:

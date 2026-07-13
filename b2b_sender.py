@@ -105,6 +105,9 @@ def is_valid(e):
     domain = parts[1]
     if "." not in domain or domain.startswith("www."):
         return False
+    # junk guard: sane local part + real-looking domain + valid-length TLD
+    if len(parts[0]) < 2 or len(domain) < 6 or len(domain.split(".")[-1]) < 2:
+        return False
     if re.match(r"^[0-9a-f]{20,}$", parts[0], re.I):
         return False
     return True
