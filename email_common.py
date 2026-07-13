@@ -737,6 +737,15 @@ _SEND_FAILED_BODY = re.compile(
 
 
 def classify_incoming(msg, own_addresses):
+
+    # Gmail OUTBOUND policy block ("Message rejected", answer/69585): permanent.
+    # Re-sending identical content makes reputation worse -> treat as bounce
+    # so the reanimator never requeues it.
+    _blob = (msg.get("subject", "") or "") + " " + (msg.get("body", "") or "")
+    if "mailer-daemon" in (msg.get("from_email", "") or "") and (
+            "answer/69585" in _blob or "Message rejected" in _blob or
+            "Сообщение заблокировано" in _blob):
+        return "bounce"
     """Classify a parsed message dict (from fetch_inbox).
 
     Returns one of:
