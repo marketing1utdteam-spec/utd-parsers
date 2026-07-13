@@ -504,7 +504,13 @@ def measure_pagespeed(url):
     try:
         api = ("https://www.googleapis.com/pagespeedonline/v5/runPagespeed"
                "?strategy=mobile&category=performance&url=" + url)
+        # A real key lifts the strict keyless quota (which returns 429). Prefer
+        # a dedicated PAGESPEED_API_KEY; otherwise reuse the first Google API
+        # key we already carry — PageSpeed is the same key type and the API is
+        # now enabled on those projects.
         key = os.environ.get("PAGESPEED_API_KEY", "").strip()
+        if not key:
+            key = (os.environ.get("GOOGLE_API_KEYS", "").split(",") or [""])[0].strip()
         if key:
             api += "&key=" + key
         d = None
