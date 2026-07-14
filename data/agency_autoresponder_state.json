@@ -383,22 +383,22 @@
 "16d757a872fff4557eafefe37d4db7b2cda50a4ede8eae888edf4f7c61a6c3cf",
 "e42338827337b6226390084e36e4beee9d6a855747dd0d44a2ff0e651d534789"
 ],
-"updated": "2026-07-14T18:02:02.674831+00:00",
+"updated": "2026-07-14T18:15:23.027444+00:00",
 "contacts": {
 "4aac37bcd1794bc6d3361ccbf63110dc82fc3c67f75c8bf42ae401ba0342ca8c": {
-"last_sent": "2026-07-11T18:07:26.564154+00:00",
+"last_sent": "2026-07-14T18:15:21.549753+00:00",
 "stage": "Agreement Sent",
 "account": "sergey.utd@gmail.com",
 "reminders": {
-"Agreement Sent": 1
+"Agreement Sent": 2
 }
 },
 "331b282da7941ebea4f5c9d9d9a384647a73189141d52e6760e784340c52b20d": {
-"last_sent": "2026-07-11T18:07:29.298863+00:00",
+"last_sent": "2026-07-14T18:15:22.838136+00:00",
 "stage": "Qualifying",
 "account": "sergey.utd@gmail.com",
 "reminders": {
-"Qualifying": 1
+"Qualifying": 2
 }
 },
 "1db13ed9fbfbe3ba6df662b5c6d2fce5667e0cb2bf44a58789d65819e4a5b727": {
