@@ -83,7 +83,7 @@ ACCOUNTS = [a for a in (
 ) if a["user"]]
 
 _STATE_DIR = os.environ.get("STATE_DIR", ".")
-STATE_FILE = os.path.join(_STATE_DIR, "data", "influencer_autoresponder_state.json")
+STATE_FILE = os.path.join(_STATE_DIR, "influencer_autoresponder_state.json")
 
 DRY_RUN = os.environ.get("DRY_RUN", "true").strip().lower() in ("1", "true", "yes", "on")
 # Scan the WHOLE inbox over a wide window (dedup is by hashed Message-ID in state).
