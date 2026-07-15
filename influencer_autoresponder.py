@@ -92,6 +92,16 @@ DRY_RUN = os.environ.get("DRY_RUN", "true").strip().lower() in ("1", "true", "ye
 # Scan the WHOLE inbox over a wide window (dedup is by hashed Message-ID in state).
 LOOKBACK_DAYS = int(os.environ.get("LOOKBACK_DAYS", "60"))
 
+# Where the FINISHED deal (full rate card) is reported — same team inboxes as the
+# signed-contract alert. The agent handles the whole conversation itself and only
+# sends here once the rate card is complete.
+_DEFAULT_REPORT_TO = ("denvdavydov@gmail.com,marketing@utdweb.team,"
+                      "denys.davydov.utd@gmail.com,sergey.smortkin.utd@gmail.com,"
+                      "george.smortkin@gmail.com")
+REPORT_TO = [x.strip() for x in
+             (os.environ.get("REPORT_NOTIFY_TO") or os.environ.get("SIGNED_NOTIFY_TO")
+              or _DEFAULT_REPORT_TO).split(",") if x.strip()]
+
 # ONLY the influencer chain is handled here (mirror image of the agency responder,
 # which SKIPS this marker). Broadened 2026-07-15: the old marker ("shopify theme
 # review collab") only matched 1 of the 6 outreach subject variants, so replies to
@@ -157,20 +167,19 @@ SYSTEM_PROMPT = (
 "ALREADY COLLECTED data will be provided with each email. Ask ONLY for what is missing AND applicable. If everything applicable is collected, thank them warmly and say the team will review the options and get back to them shortly. Do not negotiate discounts, do not commit to any purchase, budget, or timeline. If they ask for OUR budget, politely say the budget depends on their formats and rates, and ask for their rate card instead. If they ask questions about UTD, answer briefly: official Shopify Theme Store developer, 25 themes, based in Belgium.\n\n"
 "THEMES YOU MAY NAME (every theme mention carries its link; never name other themes): Gain https://themes.shopify.com/themes/gain, Ultra https://themes.shopify.com/themes/ultra, Boutique https://themes.shopify.com/themes/boutique, Allure https://themes.shopify.com/themes/allure, Victory https://themes.shopify.com/themes/victory.\n\n"
 "YOUR TASK: read one incoming email and return STRICT JSON:\n"
-"{\"category\":\"interested|question|decline|spam|escalate\",\"note\":\"<one short sentence in RUSSIAN for the manager>\",\"reply_body\":\"<reply text or empty>\",\"data\":{\"price_article\":\"\",\"price_youtube_video\":\"\",\"price_video_mention\":\"\",\"price_shorts\":\"\",\"price_social_post\":\"\",\"price_story_mention\":\"\",\"price_newsletter\":\"\",\"packages\":\"\",\"usage_rights\":\"\",\"affiliate_revshare\":\"\",\"audience_size\":\"\",\"audience_geo\":\"\",\"expected_views\":\"\",\"channel_links\":\"\",\"media_kit\":\"\",\"platform\":\"\",\"notes\":\"\"},\"data_complete\":false}\n\n"
-"DATA RULES: fill data fields with values extracted from THIS email verbatim (e.g. \"$300\", \"1500 EUR\", \"120k subscribers\", \"30-50k views per video\"). Leave a field as empty string if this email does not mention it. Use notes for anything relevant that does not fit (bundles, requirements, free product requests). Set data_complete=true only when, combining already-collected data and this email, you have prices for ALL formats this creator offers (judge by their platform and their own words) AND audience_size AND expected_views. A blog-only creator with just an article price and audience data can be complete.\n\n"
-"CATEGORY RULES:\n"
-"- interested / question: continue the dialogue per the goal. reply_body required.\n"
-"- decline: not interested or asks to stop. reply_body empty.\n"
+"{\"category\":\"interested|question|decline|spam\",\"note\":\"<one short sentence in RUSSIAN for the manager>\",\"reply_body\":\"<reply text or empty>\",\"data\":{\"price_article\":\"\",\"price_youtube_video\":\"\",\"price_video_mention\":\"\",\"price_shorts\":\"\",\"price_social_post\":\"\",\"price_story_mention\":\"\",\"price_newsletter\":\"\",\"packages\":\"\",\"usage_rights\":\"\",\"affiliate_revshare\":\"\",\"audience_size\":\"\",\"audience_geo\":\"\",\"expected_views\":\"\",\"channel_links\":\"\",\"media_kit\":\"\",\"platform\":\"\",\"notes\":\"\"},\"data_complete\":false}\n\n"
+"DATA RULES: fill data fields with values extracted from THIS email verbatim (e.g. \"$300\", \"1500 EUR\", \"120k subscribers\", \"30-50k views per video\"). For each content format (the 7 price_* fields): if the creator gives a price, put it there; if the creator says they do NOT offer that format, put the exact text \"N/A\" in that field so we know it is settled and stop asking about it; leave a field EMPTY only when it is still unknown (neither a price nor a clear no). Keep asking, politely, about every price_* field that is still EMPTY until each one is either a price or \"N/A\". Use notes for anything relevant that does not fit. Set data_complete=true when, combining already-collected data and this email, EVERY price_* field is filled (a price or \"N/A\") AND audience_size and expected_views are known. At that point the rate card is finished.\n\n"
+"CATEGORY RULES (you handle everything yourself, you NEVER hand a conversation to a human):\n"
+"- interested / question: continue the dialogue per the goal, always with a reply. Use this for normal conversation AND for anything harder (contracts, payment terms, legal questions, revenue-share, aggressive negotiation): do not refuse and do not stall, answer plainly from the facts you have, and if they ask about the actual booking, contract or payment, tell them warmly that once you have their full rate card the team will send the agreement and the next steps by email. reply_body required.\n"
+"- decline: they clearly say they are not interested or ask to stop. reply_body empty.\n"
 "- spam: unrelated or automated mail. reply_body empty.\n"
-"- escalate: contracts, calls with specific times, legal or payment questions, aggressive negotiation, whitelabel or revenue-share partnership proposals, paid research platforms, or anything you cannot answer from the facts above. reply_body empty.\n\n"
 "REPLY RULES:\n"
 "- Reply in the LANGUAGE of the incoming email.\n"
 "- SIMPLE ENGLISH for non-native readers (and the same simple wording in any other language): common everyday words, and write in LONG, flowing, simple sentences that go straight to the point (never short choppy ones) — real people write long simple sentences, not staccato fragments. No idioms, no slang, no fancy phrases ('caught my eye', 'worth a look' and anything similar are forbidden). If a 12-year-old would not understand a sentence, rewrite it.\n"
 "- Write like a normal person typing an email by hand. If a sentence reads like AI or a script, rewrite it. Zero filler, maximum concreteness. Never open with a generic compliment. The email is as long as it needs to be to cover the point, no longer.\n"
 "- FORMAT (mandatory): line 1 is a greeting; then a blank line; then the body grouped by meaning into a few paragraphs with a blank line between them, each paragraph written as LONG, flowing, simple sentences that get straight to the point, never short choppy ones. Then a blank line, the farewell and the signature.\n"
 "- This is a reply inside a thread: the first sentence after the greeting refers naturally to what they wrote or to the earlier exchange. Add only NEW substance; never repeat a question they already answered and never re-send the same pitch (use the thread history).\n"
-"- Every reply moves the goal forward: it must either ask for the missing rate-card items (as a short list) or, when everything is collected, close with the next step (the team reviews and gets back to them).\n"
+"- Every reply moves the goal forward: it asks, as a short natural list, for the prices of the formats that are still unknown (skip the ones already priced or already marked not-offered), and when every format is settled (a price or a clear no) plus audience is known, it closes warmly by saying you have everything you need and the team will get back to them shortly with the next steps and the agreement.\n"
 "- Never use an em dash. Forbidden words: exclusive, exciting, game-changer, handpicked, curated, unique opportunity. Never invent facts, features, prices or numbers.\n"
 "- Never offer or suggest a call or meeting: everything is handled by email; you may offer help by email ('reply and I'll walk you through it').\n"
 "- The only links allowed: https://utdweb.team, https://themes.shopify.com/themes?q=UTD, and the five theme pages listed above (always attach the link when a theme is named).\n"
@@ -263,10 +272,9 @@ def parse_ai_result(text, collected):
                 exactly like the n8n «Итог AI» defaults.
     """
     if not text or not text.strip():
-        return None  # transient API failure → retry next run, never escalate
+        return None  # transient API failure → retry next run
 
-    # n8n «Итог AI» defaults.
-    cat = "escalate"
+    cat = None
     reply = ""
     note = "AI не смог разобрать письмо"
     data = {}
@@ -274,7 +282,7 @@ def parse_ai_result(text, collected):
     try:
         m = re.search(r"\{[\s\S]*\}", text)
         p = json.loads(m.group(0))
-        if p.get("category") in ("interested", "question", "decline", "spam", "escalate"):
+        if p.get("category") in ("interested", "question", "decline", "spam"):
             cat = p["category"]
         reply = _clean_reply(p.get("reply_body"))
         note = (p.get("note") or "").strip() or note
@@ -283,12 +291,17 @@ def parse_ai_result(text, collected):
     except Exception:
         pass
 
-    # interested/question with no drafted reply → escalate to a human.
-    if cat in ("interested", "question") and not reply:
-        cat = "escalate"
+    # Unparseable / missing category, or an "interested" verdict with no drafted
+    # reply → we cannot act cleanly; leave it for the next run to retry (we NEVER
+    # hand off to a human, so there is no escalate route anymore).
+    if cat is None or (cat in ("interested", "question") and not reply):
+        return None
 
     route = "respond" if cat in ("interested", "question") \
-        else ("ignore" if cat == "spam" else cat)  # decline | escalate
+        else "ignore"  # spam → ignore; decline handled below
+
+    if cat == "decline":
+        route = "decline"
 
     # Merge: new value overrides the old one only when non-empty.
     merged = {}
@@ -297,8 +310,7 @@ def parse_ai_result(text, collected):
         merged[k] = nv or str(collected.get(k, "") or "")
 
     pricing_status = "Declined" if route == "decline" \
-        else ("Escalated" if route == "escalate"
-              else ("Data Complete" if complete else "Negotiating"))
+        else ("Data Complete" if complete else "Negotiating")
 
     return {"category": route, "ai_category": cat, "note": note, "reply_body": reply,
             "merged": merged, "data_complete": complete,
@@ -431,6 +443,35 @@ def do_reply(account, msg, decision):
         return
     ec.send_email(account, msg["from_email"], subject, decision["reply_body"],
                   in_reply_to=msg["message_id"], references=msg["references"])
+
+
+def send_deal_report(account, msg, contact_email, contact_name, decision):
+    """Deal closed (full rate card gathered) → email the finished conversation and
+    the collected rate card to the team report inboxes. Sent once per contact."""
+    merged = decision.get("merged") or {}
+    rate_card = "\n".join(
+        f"  {PRICING_COL_BY_KEY.get(k, k)}: {merged.get(k) or '-'}" for k in DATA_KEYS)
+    try:
+        history = get_thread_history(account, msg)
+    except Exception:
+        history = ""
+    subject = f"✅ Influencer rate card complete — {contact_name or contact_email}"
+    body = (
+        "An influencer conversation is finished: the full rate card is collected "
+        "and the deal is ready for the team to take the next step.\n\n"
+        f"Creator: {contact_name or '(unknown)'}\n"
+        f"Email:   {contact_email}\n\n"
+        "RATE CARD (a price, or N/A where the format is not offered):\n"
+        f"{rate_card}\n\n"
+        "FULL CONVERSATION:\n"
+        f"{history or '(thread history unavailable)'}\n\n"
+        "— Automated report from the UTD influencer agent"
+    )
+    if DRY_RUN:
+        print(f"  [REPORT] DRY_RUN — would send rate-card report to {REPORT_TO}")
+        return
+    ec.send_email(account, REPORT_TO, subject, body, from_name="UTD Influencer Agent")
+    print(f"  [REPORT] rate-card report sent to {len(REPORT_TO)} recipients for {contact_email}")
 
 
 def enqueue_contact_status(email, status):
@@ -596,6 +637,12 @@ def process_message(account, msg, by_thread, by_email, pricing_by_email, state, 
         # interested/question → send reply + Pricing upsert (Negotiating/Data Complete).
         do_reply(account, msg, decision)
         enqueue_pricing_upsert(contact_email, contact_name, decision, msg)
+        # Deal closed = full rate card gathered. Hand the finished conversation to
+        # the report inboxes ONCE per contact (never before it is complete).
+        if decision.get("data_complete") and contact_email \
+                and not ec.is_processed(state, "reported:" + contact_email.lower()):
+            send_deal_report(account, msg, contact_email, contact_name, decision)
+            ec.mark_processed(state, "reported:" + contact_email.lower())
     elif route == "decline":
         # Sheet1 Status='Declined' + Pricing upsert (Contact Status='Declined'). No reply.
         enqueue_contact_status(contact_email, "Declined")
@@ -613,10 +660,8 @@ def process_message(account, msg, by_thread, by_email, pricing_by_email, state, 
             print("  failed recipient not found → Sheet1 left untouched.")
     elif route == "auto_reply":
         enqueue_contact_status(contact_email, "Auto Reply")
-    elif route == "escalate":
-        # n8n «Эскалация: оставить непрочитанным» noOp — no reply, no sheet write.
-        print("  ESCALATE → left for a human (no reply, no sheet write).")
-    # 'own' / 'ignore' → nothing (n8n «Прочитано: игнор»).
+    # 'own' / 'ignore' → nothing. There is NO escalate route: the agent handles
+    # every real conversation itself and only reports once the deal is closed.
 
     if not DRY_RUN:
         ec.mark_processed(state, mid)

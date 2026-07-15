@@ -87,7 +87,16 @@ EXPECTED_COLUMNS = [
 # Switch order from the n8n «Маршрут» node. A category not in this list falls
 # through to the "ignore" output (mark handled, no reply, no sheet write) — this
 # is exactly what happens to 'auto_reply' and 'ignore' (spam) in the workflow.
-ROUTE_OUTPUTS = ["respond", "escalate", "decline", "bounce", "send_failed"]
+ROUTE_OUTPUTS = ["respond", "decline", "bounce", "send_failed"]
+
+# Team report inboxes — where a CLOSED ecom deal (merchant committed to buying) is
+# reported. Same list as the influencer report / signed-contract alert.
+_DEFAULT_REPORT_TO = ("denvdavydov@gmail.com,marketing@utdweb.team,"
+                      "denys.davydov.utd@gmail.com,sergey.smortkin.utd@gmail.com,"
+                      "george.smortkin@gmail.com")
+REPORT_TO = [x.strip() for x in
+             (os.environ.get("REPORT_NOTIFY_TO") or os.environ.get("SIGNED_NOTIFY_TO")
+              or _DEFAULT_REPORT_TO).split(",") if x.strip()]
 
 # ── In-run caches (populated once per run; NO per-email Sheets calls) ──
 # _THREAD_CACHE: {(account_user, gm_thrid): history_text} so each Gmail thread
@@ -114,9 +123,10 @@ SYSTEM_PROMPT = (
 "- Boutique ($160): Boutique, Aurum, Jade, Noom, Reflections\n"
 "- Impression ($340): Impression, Etoile, Felix, Mimi, Reflex\n"
 "LINKS: theme page = https://themes.shopify.com/themes/<theme-lowercase>. Preset demo = https://themes.shopify.com/themes/<theme-lowercase>/presets/<preset-lowercase> (example: preset Roast of theme Victory = https://themes.shopify.com/themes/victory/presets/roast). EVERY time you name a theme or a preset, put its link right next to it. A demo = the live preview on that page. The only links allowed in a reply: https://utdweb.team, https://themes.shopify.com/themes?q=UTD, and these theme/preset pages.\n\n"
-"FUNNEL GOAL: SELL, do not just inform: convince this merchant to choose and buy ONE UTD theme. Stick to ONE preset/theme across the whole thread: the one the thread already points to (the preset we suggested earlier or the one they asked about). Do not switch to a new theme in every email; if the thread does not point anywhere yet, ask one easy question about their store to pick the right one. Argue from THEIR SALES (speed, layout, checkout drive orders) and prove claims with the evidence below woven into the argument. Build the argument around THEIR pain: a slow store, monthly app fees stacking up, weak conversion, a clunky theme. Value line you may use: built-in upsell, cross-sell and promo blocks replace apps that cost $15-50 per month, so the one-time theme price pays for itself. Official Shopify Theme Store status means a safe purchase: preview before publish, products stay in place. NEVER ask the merchant about their metrics, speed scores or conversion numbers (they do not know them). Answer their questions accurately using ONLY the facts above. Do not invent facts, features, prices or numbers. Do not offer discounts. Never offer or suggest a call or meeting: everything is handled by email; you may offer help by email ('reply and I'll walk you through it'). If they ask about custom development, a call at a specific time, contracts, or anything not covered here, do NOT answer, mark escalate.\n\n"
+"FUNNEL GOAL: SELL, do not just inform: convince this merchant to choose and buy ONE UTD theme. Stick to ONE preset/theme across the whole thread: the one the thread already points to (the preset we suggested earlier or the one they asked about). Do not switch to a new theme in every email; if the thread does not point anywhere yet, ask one easy question about their store to pick the right one. Argue from THEIR SALES (speed, layout, checkout drive orders) and prove claims with the evidence below woven into the argument. Build the argument around THEIR pain: a slow store, monthly app fees stacking up, weak conversion, a clunky theme. Value line you may use: built-in upsell, cross-sell and promo blocks replace apps that cost $15-50 per month, so the one-time theme price pays for itself. Official Shopify Theme Store status means a safe purchase: preview before publish, products stay in place. NEVER ask the merchant about their metrics, speed scores or conversion numbers (they do not know them). Answer their questions accurately using ONLY the facts above. Do not invent facts, features, prices or numbers. Do not offer discounts. Never offer or suggest a call or meeting: everything is handled by email; you may offer help by email ('reply and I'll walk you through it'). You handle the whole conversation yourself and NEVER hand it to a human: if they ask about custom development, a specific dated call, contracts, or something not covered here, do not refuse or stall, answer plainly from the facts you have and, for anything you truly cannot cover, say you will note it and the team will follow up by email, then keep guiding them toward choosing and buying the theme.\n\n"
 "EVIDENCE you may cite (real and named; use AT MOST ONE per reply; never cite any other statistic; NEVER park it in its own paragraph, weave it into the sales argument at the moment you make the claim): Google/SOASTA 2017: bounce probability grows 32% as mobile load goes 1s to 3s. Deloitte and Google 'Milliseconds Make Millions' 2020: a 0.1s speed improvement lifted retail conversions ~8.4%. Portent 2022: 1s sites convert ~2.5x better than 5s sites. Baymard Institute: ~70% of carts are abandoned; better checkout design alone recovers ~35% conversion for an average large store. Business cases (published by Google/web.dev): Vodafone made pages 31% faster and sales rose 8%; Rakuten 24 invested in Core Web Vitals and got +33% conversion and +53% revenue per visitor; Swappie grew mobile revenue 42% after speeding up its mobile site. These prove the MECHANISM; never claim a specific result for our themes.\n\n"
-"Return STRICT JSON: {\"category\":\"interested|question|decline|spam|escalate\",\"note\":\"<short RU>\",\"reply_body\":\"<reply or empty>\"}\n"
+"Return STRICT JSON: {\"category\":\"interested|question|decline|spam\",\"deal_closed\":false,\"note\":\"<short RU>\",\"reply_body\":\"<reply or empty>\"}\n"
+"- deal_closed: set true ONLY when the merchant clearly commits to going ahead with a theme (they say they will buy it, are purchasing it, ask exactly how to complete the purchase, or confirm they picked it). A general 'interested' is NOT closed. When true, still write a warm reply that helps them finish the purchase.\n"
 "- interested/question: reply_body required. WRITING RULES:\n"
 "  * Reply in the LANGUAGE of the incoming email.\n"
 "  * SIMPLE ENGLISH for non-native readers (and the same simple wording in any other language): common everyday words, and write in LONG, flowing, simple sentences that go straight to the point (never short choppy ones) — real people write long simple sentences, not staccato fragments. No idioms, no slang, no fancy phrases ('caught my eye', 'worth a look' and anything similar are forbidden). If a 12-year-old would not understand a sentence, rewrite it.\n"
@@ -130,7 +140,6 @@ SYSTEM_PROMPT = (
 "Sergey\n"
 "UTD Web | utdweb.team\n"
 "- decline/spam: reply_body empty.\n"
-"- escalate: reply_body empty.\n"
 "Output ONLY the JSON."
 )
 
@@ -211,28 +220,29 @@ def parse_ai_result(text):
     JSON, or an empty API response) the category DEFAULTS to 'escalate' — the
     workflow never leaves a message undecided, it hands it to a human.
     """
-    cat, reply, note = "escalate", "", "AI не разобрал"
+    cat, reply, note, closed = None, "", "AI не разобрал", False
     try:
         m = re.search(r"\{[\s\S]*\}", text or "")
         p = json.loads(m.group(0))
-        if p.get("category") in ("interested", "question", "decline", "spam", "escalate"):
+        if p.get("category") in ("interested", "question", "decline", "spam"):
             cat = p["category"]
         reply = _clean_reply(p.get("reply_body"))
         note = (p.get("note") or "").strip() or note
+        closed = bool(p.get("deal_closed"))
     except Exception:
         pass
 
-    # interested/question with no drafted reply → escalate to a human
-    if cat in ("interested", "question") and not reply:
-        cat = "escalate"
+    # We never hand off to a human. If unparseable, or it wants to reply but drafted
+    # nothing, leave it for the next run to retry cleanly.
+    if cat is None or (cat in ("interested", "question") and not reply):
+        return None
 
     route = "respond" if cat in ("interested", "question") else (
-        "ignore" if cat == "spam" else cat)
+        "ignore" if cat == "spam" else "decline")
     status = "Replied" if route == "respond" else (
-        "Declined" if cat == "decline" else (
-            "Escalated" if cat == "escalate" else ""))
+        "Declined" if cat == "decline" else "")
     return {"category": route, "ai_category": cat, "note": note,
-            "reply_body": reply, "new_status": status}
+            "reply_body": reply, "new_status": status, "deal_closed": closed}
 
 
 def non_ai_result(pre_category):
@@ -320,6 +330,31 @@ def do_reply(account, msg, decision):
         return
     ec.send_email(account, msg["from_email"], subject, decision["reply_body"],
                   in_reply_to=msg["message_id"], references=msg["references"])
+
+
+def send_deal_report(account, msg, contact_email, contact, decision):
+    """Deal closed (merchant committed to buying) → email the finished conversation
+    to the team report inboxes. Sent once per contact."""
+    store = (contact.get("store") if contact else "") or "(store)"
+    try:
+        history = get_thread_history(account, msg, contact)
+    except Exception:
+        history = ""
+    subject = f"✅ Ecom deal closed — {store}"
+    body = (
+        "A store merchant has committed to buying a UTD theme — the conversation is "
+        "ready for the team to help them finish.\n\n"
+        f"Store:   {store}\n"
+        f"Email:   {contact_email}\n\n"
+        "FULL CONVERSATION:\n"
+        f"{history or '(thread history unavailable)'}\n\n"
+        "— Automated report from the UTD ecom agent"
+    )
+    if DRY_RUN:
+        print(f"  [REPORT] DRY_RUN — would send closed-deal report to {REPORT_TO}")
+        return
+    ec.send_email(account, REPORT_TO, subject, body, from_name="UTD Ecom Agent")
+    print(f"  [REPORT] closed-deal report sent to {len(REPORT_TO)} recipients for {contact_email}")
 
 
 def enqueue_update(email, updates):
@@ -428,6 +463,11 @@ def process_message(account, msg, by_email, by_thread, state, stats):
             print("  [claude unavailable -> fallback/skip]")
             return
         decision = parse_ai_result(ai_text)
+        if decision is None:
+            # Unparseable/ambiguous — leave for the next run (never hand to a human).
+            print(f"\n· {account['user']} ← {msg['from_email']} | {msg['subject'][:60]!r}")
+            print("  UNDECIDED → left for next run, not marked processed.")
+            return
 
     # «Маршрут» switch: a category not in ROUTE_OUTPUTS falls to the ignore output.
     route = decision["category"] if decision["category"] in ROUTE_OUTPUTS else "ignore"
@@ -440,6 +480,13 @@ def process_message(account, msg, by_email, by_thread, state, stats):
         target = (contact.get("email") if contact else "") or msg["from_email"]
         # «Статус: диалог»: Status = new_status || 'Replied'
         write_status(target, decision["new_status"] or "Replied")
+        # Deal closed = merchant committed to buying the theme. Report the finished
+        # conversation to the team inboxes ONCE per contact.
+        if decision.get("deal_closed") and target \
+                and not ec.is_processed(state, "reported:" + target.lower()):
+            write_status(target, "Deal Closed")
+            send_deal_report(account, msg, target, contact, decision)
+            ec.mark_processed(state, "reported:" + target.lower())
     elif route == "decline":
         target = (contact.get("email") if contact else "") or msg["from_email"]
         write_status(target, "Declined")
@@ -454,11 +501,8 @@ def process_message(account, msg, by_email, by_thread, state, stats):
                 ec.mark_bounced_everywhere(rcpt, dry_run=DRY_RUN)
         else:
             print("  failed recipient not found → sheet left untouched.")
-    elif route == "escalate":
-        # n8n «Эскалация: непрочитано»: no reply, no sheet write. We DO mark it
-        # processed so it is not re-escalated every run (decision was made).
-        print("  ESCALATE → left for a human (no reply, no sheet write).")
-    # 'ignore' (spam / auto_reply) → mark handled, nothing else.
+    # 'ignore' (spam / auto_reply) → mark handled, nothing else. No escalate route:
+    # the agent answers every real message itself and reports only on a closed deal.
 
     if not DRY_RUN:
         ec.mark_processed(state, mid)

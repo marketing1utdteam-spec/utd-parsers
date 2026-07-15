@@ -52,11 +52,14 @@ import email_common as ec
 SHEET_ID = os.environ.get("AGENCY_SHEET_ID", os.environ.get("B2B_SHEET_ID", ""))
 SHEET_TAB = os.environ.get("AGENCY_SHEET_TAB", "IT Companies — Emails")
 
-# Deal-review recipients after a signed agreement (Valeriy 2026-07-06/07-08).
-REVIEW_TO = [a for a in (
-    os.environ.get("UTD_MAIL_SERHII", ""),
-    os.environ.get("UTD_MAIL_DENYS", ""),
-) if a]
+# Deal-review recipients after a signed agreement — the team report inboxes
+# (same list as the influencer report / signed-contract alert).
+_DEFAULT_REVIEW_TO = ("denvdavydov@gmail.com,marketing@utdweb.team,"
+                      "denys.davydov.utd@gmail.com,sergey.smortkin.utd@gmail.com,"
+                      "george.smortkin@gmail.com")
+REVIEW_TO = [x.strip() for x in
+             (os.environ.get("REPORT_NOTIFY_TO") or os.environ.get("SIGNED_NOTIFY_TO")
+              or _DEFAULT_REVIEW_TO).split(",") if x.strip()]
 
 # Our own mailbox addresses — inbound from these is a loop, not a prospect.
 OWN_ADDRESSES = [a for a in (
@@ -185,14 +188,13 @@ SYSTEM_PROMPT = (
 "- signed: thank them for returning the signed document, welcome them to the UTD Agency Partner Program, confirm receipt and that their participation is now finalised, and outline what happens next: their first active month starts now, they report client store identifiers by the 3rd calendar day of the following month, and commission is released after the sixty day holdback. Answer any open questions.\n"
 "- info: answer their questions precisely using the facts above, including exact numbers, and still end with a small next step when one exists.\n\n"
 "YOUR TASK: read one incoming email and return STRICT JSON:\n"
-'{"category":"interested|question|decline|spam|escalate","stage":"qualify|memo|agreement_offer|agreement_ready|signed|info","note":"<one short sentence in RUSSIAN summarising the email for the manager>","reply_body":"<full reply text, or empty string>"}\n\n'
+'{"category":"interested|question|decline|spam","stage":"qualify|memo|agreement_offer|agreement_ready|signed|info","note":"<one short sentence in RUSSIAN summarising the email for the manager>","reply_body":"<full reply text, or empty string>"}\n\n'
 "IMPORTANT: choose stage \"signed\" ONLY when the email has attachments (has_attachments is true). A promise to sign without an attached document is NOT \"signed\".\n\n"
-"CATEGORY RULES:\n"
+"CATEGORY RULES (you close the deal yourself and NEVER hand a conversation to a human):\n"
 "- interested: they want to join, learn more, or continue the conversation. Reply per the stage rules.\n"
-"- question: they ask questions about the program. Reply per the stage rules.\n"
+"- question: they ask questions about the program, including harder ones (custom commission requests, contract or NDA wording, payment mechanics, legal or GDPR points). Answer plainly from the verified facts above and keep moving toward the signature. For a request you genuinely cannot satisfy from these facts (a truly custom legal term, a specific dated call, a complaint or press query), do NOT stall or refuse: reply warmly that you will note it and the team will confirm the exact wording along with the agreement, then continue driving to the next step. Reply per the stage rules.\n"
 "- decline: not interested or asks to stop emailing. reply_body must be empty.\n"
-"- spam: unrelated marketing, newsletters, automated notifications. reply_body must be empty.\n"
-"- escalate: use whenever a correct answer needs a human: requests for custom commission terms, contract or NDA documents beyond our standard agreement, scheduling a call at a specific time, payment problems, complaints, legal interpretation, press, or a question that the facts above cannot answer. reply_body must be empty.\n\n"
+"- spam: unrelated marketing, newsletters, automated notifications. reply_body must be empty.\n\n"
 "REPLY RULES (for interested and question):\n"
 "- Use ONLY the facts above. Never invent facts, numbers, dates, names or prices. Only links allowed: https://utdweb.team and https://themes.shopify.com/themes?q=UTD\n"
 "- Reply in the LANGUAGE of the incoming email.\n"
@@ -201,7 +203,7 @@ SYSTEM_PROMPT = (
 "- The reply is as long as it needs to be to fully answer and move things forward, no longer.\n"
 "- FORMAT (mandatory): line 1 is a greeting; then a blank line; then the body grouped by meaning into a few paragraphs with a blank line between them, each paragraph written as LONG, flowing, simple sentences that get straight to the point, never short choppy ones. Then a blank line, the farewell and the signature.\n"
 "- If the thread already has earlier messages from us, the first sentence after the greeting must naturally refer to the earlier exchange. Add only NEW substance; never repeat what was already said (use the thread history).\n"
-"- Never offer or suggest a call or meeting. Everything is handled by email; you may offer help by email ('reply and I'll walk you through it'). If THEY push for a call at a specific time, that is escalate per the category rules.\n"
+"- Never offer or suggest a call or meeting. Everything is handled by email; you may offer help by email ('reply and I'll walk you through it'). If THEY push for a call, gently keep it on email and continue toward the agreement.\n"
 "- Never use em dashes. Never use the words: exclusive, exciting, game-changer, handpicked, curated, unique opportunity.\n"
 "- Do not promise anything beyond the facts.\n"
 "- End the reply with exactly:\nBest regards,\nSergey\nUTD Web | utdweb.team\n\n"
@@ -257,15 +259,16 @@ def parse_ai_result(text, has_attachments, prev_status):
         return None
 
     cat = p["category"] if p.get("category") in (
-        "interested", "question", "decline", "spam", "escalate") else "escalate"
+        "interested", "question", "decline", "spam") else None
     stage = p["stage"] if p.get("stage") in (
         "qualify", "memo", "agreement_offer", "agreement_ready", "signed", "info") else ""
     reply = _clean_reply(p.get("reply_body"))
     note = (p.get("note") or "").strip() or "разобрано AI"
 
-    # interested/question with no drafted reply → escalate to a human
-    if cat in ("interested", "question") and not reply:
-        cat = "escalate"
+    # We NEVER hand off to a human. If the category is missing, or it wants to
+    # reply but drafted nothing, leave it for the next run to retry cleanly.
+    if cat is None or (cat in ("interested", "question") and not reply):
+        return None
     # "signed" is impossible without an attachment — hard guard over the AI
     if stage == "signed" and not has_attachments:
         stage = "info"
@@ -275,7 +278,7 @@ def parse_ai_result(text, has_attachments, prev_status):
     elif cat == "spam":
         route = "ignore"
     else:
-        route = cat  # decline | escalate
+        route = "decline"
     if route == "respond" and stage == "signed":
         route = "signed"
 
@@ -752,11 +755,8 @@ def process_message(account, msg, by_email, by_token, state, stats):
     elif route == "auto_reply":
         target = (contact.get("email") if contact else "") or msg["from_email"]
         set_contact_status(target, decision["new_status"] or "Auto Reply")
-    elif route == "escalate":
-        # A real, parsed escalation: no reply, no notification. The email stays
-        # in the inbox for a human. We DO mark it processed (decision was made).
-        print("  ESCALATE → left for a human (no reply, no notification).")
-    # 'ignore' → nothing
+    # 'ignore' → nothing. There is NO escalate route: the agent answers every real
+    # message itself and only emails REVIEW_TO once the agreement is signed.
 
     if not DRY_RUN:
         ec.mark_processed(state, mid)
