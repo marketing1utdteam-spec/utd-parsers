@@ -1,9 +1,12 @@
 name: B2B Parser — Daily
 
 on:
-  schedule:
-    - cron: '17 5 * * *'      # 06:00 UTC — утренний прогон
-    - cron: '43 13 * * *'     # 14:00 UTC — дневной прогон (2 раза в день)
+  schedule:                    # 5 прогонов/день, разнесены по суткам (парсер собирает 24/7)
+    - cron: '17 2 * * *'
+    - cron: '17 6 * * *'
+    - cron: '17 10 * * *'
+    - cron: '17 14 * * *'
+    - cron: '17 18 * * *'
   workflow_dispatch: {}        # manual "Run workflow" button
 
 permissions:
@@ -37,8 +40,8 @@ jobs:
           # Общий пул ~7 рабочих CSE-ключей (~700/день). Без KEY_SLICE — мёртвые
           # ключи парсер сам отбрасывает. Бюджет ужат, чтобы 2 прогона всех
           # парсеров влезли в ~700/день (см. коммент в parsers-ecom.yml).
-          MAX_GOOGLE_QUERIES: '60'      # 60 × 2 стр × 2 прогона = 240 вызовов/день
-          SEARCH_PAGES: '2'             # брать 2 страницы выдачи на запрос (глубже, меньше повторов доменов)
+          MAX_GOOGLE_QUERIES: '60'      # 60 запросов/прогон
+          SEARCH_PAGES: '3'             # 3 страницы выдачи Google на запрос (глубже — больше доменов; было 2)
           NOTIFY_URL: 'https://utdteam.app.n8n.cloud/webhook/utd-parser-notify'
           B2B_SHEET_ID: ${{ vars.B2B_SHEET_ID }}
         run: python run.py b2b

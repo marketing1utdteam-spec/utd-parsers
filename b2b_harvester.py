@@ -60,6 +60,26 @@ PROFILE = {
         "ecommerce cro", "online shop design",
         "ecommerce website redesign", "shopify maintenance",
         "shopify support agency", "subscription ecommerce development",
+        # ── 2026-07-15 expansion: many more angles to widen the net ──
+        "shopify plus agency", "shopify plus partner", "shopify theme customization",
+        "shopify store design", "shopify store optimization", "shopify conversion optimization",
+        "shopify web development", "shopify liquid developer", "shopify custom theme",
+        "shopify store audit", "shopify store migration", "bigcommerce to shopify",
+        "wix to shopify", "squarespace to shopify", "shopify headless",
+        "shopify hydrogen developer", "shopify checkout customization",
+        "ecommerce ui ux agency", "ecommerce design agency", "ecommerce cro agency",
+        "direct to consumer agency", "dtc brand agency", "shopify branding agency",
+        "shopify performance optimization", "core web vitals optimization",
+        "product page optimization", "ecommerce conversion agency",
+        "shopify seo agency", "ecommerce seo agency", "shopify marketing agency",
+        "shopify growth agency", "ecommerce growth agency", "shopify email marketing",
+        "shopify klaviyo partner", "shopify subscription app", "recharge subscriptions agency",
+        "shopify b2b agency", "shopify wholesale development", "shopify international expansion",
+        "shopify multi store", "shopify pos setup", "shopify integration agency",
+        "erp shopify integration", "shopify api development", "custom shopify app",
+        "shopify private app", "shopify theme studio", "premium shopify themes",
+        "fashion ecommerce agency", "beauty ecommerce agency", "food ecommerce agency",
+        "furniture ecommerce agency", "jewelry ecommerce agency",
     ],
 
     # Words that, on the page, CONFIRM it is the right kind of company.
@@ -759,7 +779,13 @@ class QueryGenerator:
     _TYPE = ["agency", "studio", "company", "team", "design studio",
              "development studio", "digital agency", "web studio",
              "creative agency", "web agency", "consultancy", "experts",
-             "developers", "partners"]
+             "developers", "partners",
+             # 2026-07-15 expansion
+             "ecommerce agency", "shopify agency", "shopify partner",
+             "shopify experts", "ecommerce studio", "commerce agency",
+             "growth agency", "digital studio", "software house",
+             "freelancer", "consultants", "specialists", "solutions",
+             "shop", "collective", "labs", "works", "co"]
 
     _LOC = [
         "", "", "", "", "", "",
@@ -778,6 +804,15 @@ class QueryGenerator:
         # Australia / NZ / Singapore (English-speaking APAC)
         "Australia", "Sydney", "Melbourne", "Brisbane", "Perth", "Adelaide",
         "Singapore", "New Zealand", "Auckland",
+        # ── 2026-07-15 expansion: more English-market cities/regions ──
+        "Washington DC", "Sacramento", "San Jose", "Raleigh", "Cincinnati",
+        "Cleveland", "Milwaukee", "St. Louis", "New Orleans", "Baltimore",
+        "Brooklyn", "Scottsdale", "Boulder", "Fort Worth", "Jacksonville",
+        "Sheffield", "Newcastle", "Cardiff", "Belfast", "Brighton",
+        "Leicester", "Southampton", "Cork", "Galway",
+        "Gold Coast", "Canberra", "Wellington", "Christchurch",
+        "Ottawa", "Edmonton", "Winnipeg", "Halifax", "Quebec City",
+        "Hong Kong", "Dubai", "Abu Dhabi", "Cape Town", "Johannesburg",
     ]
 
     # contact-intent suffix + EXCLUDE article/marketplace noise (ENGLISH).
@@ -793,6 +828,19 @@ class QueryGenerator:
         f'"free consultation" ("hello@" OR "contact@") {_EXCLUDE}',
         f'"book a call" ("hello@" OR "info@") {_EXCLUDE}',
         f'"shopify partner" contact {_EXCLUDE}',
+        # ── 2026-07-15 expansion: more contact-intent patterns ──
+        f'"let\'s talk" ("hello@" OR "info@") {_EXCLUDE}',
+        f'"say hello" email {_EXCLUDE}',
+        f'"hire us" ("info@" OR "hello@") {_EXCLUDE}',
+        f'"get a quote" email {_EXCLUDE}',
+        f'"contact" ("studio@" OR "team@" OR "agency@") {_EXCLUDE}',
+        f'"email us" {_EXCLUDE}',
+        f'"drop us a line" {_EXCLUDE}',
+        f'"new business" ("hello@" OR "hi@") {_EXCLUDE}',
+        f'"our team" ("info@" OR "hello@") contact {_EXCLUDE}',
+        f'("hi@" OR "sales@" OR "office@") {_EXCLUDE}',
+        f'"portfolio" contact ("info@" OR "hello@") {_EXCLUDE}',
+        f'"case studies" contact email {_EXCLUDE}',
     ]
 
     # ── LOCAL-LANGUAGE query pools ──────────────────────────────────────
@@ -907,11 +955,14 @@ class QueryGenerator:
         loc = rng.choice(self._LOC)
         sfx = rng.choice(self._SUFFIX)
         loc_s = f"{loc} " if loc else ""
-        v = rng.randint(0, 3)
+        v = rng.randint(0, 6)
         if v == 0:   q = f'"{svc} {typ}" {loc_s}{sfx}'
         elif v == 1: q = f'"{svc}" {typ} {loc_s}{sfx}'
         elif v == 2: q = f'"{svc} {typ}" {sfx}'
-        else:        q = f'"{svc}" agency {loc_s}{sfx}'
+        elif v == 3: q = f'"{svc}" agency {loc_s}{sfx}'
+        elif v == 4: q = f'{svc} {typ} {loc_s}{sfx}'                 # no quotes = broader recall
+        elif v == 5: q = f'"{svc}" {loc_s}("info@" OR "hello@" OR "contact@") {self._EXCLUDE}'
+        else:        q = f'{typ} "{svc}" {loc_s}{sfx}'
         return re.sub(r"\s{2,}", " ", q).strip()
 
     def _build_local(self, rng, lang: str) -> str:
