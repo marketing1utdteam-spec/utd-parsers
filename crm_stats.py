@@ -48,11 +48,22 @@ INFL_SHEET_ID = os.environ.get("INFL_SHEET_ID", "")
 INFL_SHEET_TAB = os.environ.get("INFL_SHEET_TAB", "Sheet1")
 INFL_PRICING_TAB = os.environ.get("INFL_PRICING_TAB", "Pricing")
 
+# Ecom (third hypothesis).
+ECOM_SHEET_ID = os.environ.get("ECOM_SHEET_ID", "")
+ECOM_SHEET_TAB = os.environ.get("ECOM_SHEET_TAB", "Ecom Contacts")
+
 # Both stat snapshots are appended to a «Stats» tab in their own spreadsheet.
 STATS_TAB = os.environ.get("STATS_TAB", "Stats")
 
-# Summary email recipient (added for the GHA port — no email node in the n8n src).
-CRM_STATS_TO = os.environ.get("CRM_STATS_TO", "")
+# Dashboard email recipient(s). Falls back to the report list so the team always
+# gets the daily 3-hypothesis dashboard even if CRM_STATS_TO is not set.
+_DEFAULT_REPORT_TO = ("denvdavydov@gmail.com,marketing@utdweb.team,"
+                      "denys.davydov.utd@gmail.com,sergey.smortkin.utd@gmail.com,"
+                      "george.smortkin@gmail.com")
+CRM_STATS_TO = [x.strip() for x in
+                (os.environ.get("CRM_STATS_TO") or os.environ.get("REPORT_NOTIFY_TO")
+                 or os.environ.get("SIGNED_NOTIFY_TO") or _DEFAULT_REPORT_TO).split(",")
+                if x.strip()]
 
 # Gmail volume counts: the n8n getAll nodes had no time filter (a default page
 # limit). We count over a bounded window; override with GMAIL_COUNT_DAYS.
@@ -190,6 +201,39 @@ def compute_infl(contacts, pricing, gmail_in, gmail_out):
     }
 
 
+def compute_ecom(rows):
+    """Ecom (Shopify stores) funnel from the Status column. Closed = 'Deal Closed'."""
+    cnt = {}
+    total = sent_ever = 0
+    sent_states = ("Sent", "Followup1", "Followup2", "Sequence Done",
+                   "Replied", "Deal Closed", "Declined")
+    for r in rows:
+        if not _s(r.get("Email")):
+            continue
+        total += 1
+        st = _s(r.get("Status"))
+        cnt[st] = cnt.get(st, 0) + 1
+        if _s(r.get("Date Sent")) or st in sent_states:
+            sent_ever += 1
+    replied = cnt.get("Replied", 0) + cnt.get("Deal Closed", 0)
+    return {
+        "Дата": _today(),
+        "Всего контактов": total,
+        "В очереди": cnt.get("", 0),
+        "Отправлено (всего писем ушло)": sent_ever,
+        "Ожидают ответа (Sent)": cnt.get("Sent", 0),
+        "Фоллоу-ап 1/2": cnt.get("Followup1", 0) + cnt.get("Followup2", 0),
+        "Ответили / в диалоге": replied,
+        "Сделка закрыта (куплено)": cnt.get("Deal Closed", 0),
+        "Отказались": cnt.get("Declined", 0),
+        "Отбойники (мёртвые адреса)": cnt.get("Bounced", 0),
+        "Сбои отправки": cnt.get("Send Failed", 0),
+        "Авто-ответы (тикеты/OOO)": cnt.get("Auto Reply", 0),
+        "Reply rate %": _pct(replied, sent_ever),
+        "Close rate %": _pct(cnt.get("Deal Closed", 0), sent_ever),
+    }
+
+
 # ═══════════════════════════════════════════════════════════════════
 #   Outputs (guarded by DRY_RUN)
 # ═══════════════════════════════════════════════════════════════════
@@ -227,13 +271,33 @@ def _format_block(title, stats):
     return "\n".join(lines)
 
 
-def send_summary(b2b, infl):
-    subject = f"📊 UTD CRM Stats — {_today()}"
+def _dashboard_line(name, sent, replied, closed):
+    return f"  {name:12} | отправлено {sent:>5} | ответов {replied:>5} | закрыто {closed:>4}"
+
+
+def send_summary(b2b, ecom, infl):
+    subject = f"📊 UTD CRM Dashboard — {_today()}"
+    dash = "\n".join([
+        "DASHBOARD — по 3 гипотезам (отправлено / ответы / закрытые сделки):",
+        _dashboard_line("B2B",
+                        b2b.get("Отправлено (всего писем ушло)", 0),
+                        b2b.get("Получено ответов", 0),
+                        b2b.get("Подписали контракт", 0)),
+        _dashboard_line("Ecom",
+                        ecom.get("Отправлено (всего писем ушло)", 0),
+                        ecom.get("Ответили / в диалоге", 0),
+                        ecom.get("Сделка закрыта (куплено)", 0)),
+        _dashboard_line("Influencers",
+                        infl.get("Отправлено (всего писем ушло)", 0),
+                        infl.get("Получено ответов (в Pricing)", 0),
+                        infl.get("Прайс собран", 0)),
+    ])
     body = (
-        _format_block("B2B (IT Companies)", b2b)
-        + "\n\n"
+        dash + "\n\n"
+        + _format_block("B2B (IT Companies)", b2b) + "\n\n"
+        + _format_block("Ecom (Shopify stores)", ecom) + "\n\n"
         + _format_block("Influencers", infl)
-        + "\n\n— Automated CRM stats"
+        + "\n\n— Automated CRM dashboard"
     )
     account = next((a for a in B2B_ACCOUNTS if a["password"]), None)
     if DRY_RUN:
@@ -263,11 +327,15 @@ def run_once():
           f"{datetime.now(timezone.utc).isoformat()} ===")
 
     # ── Reads ──────────────────────────────────────────────────────
-    b2b_rows, infl_rows, pricing_rows = [], [], []
+    b2b_rows, ecom_rows, infl_rows, pricing_rows = [], [], [], []
     try:
         b2b_rows = ec.read_rows(B2B_SHEET_ID, B2B_SHEET_TAB)
     except Exception as e:
         print(f"⚠️  Could not read B2B sheet: {e}")
+    try:
+        ecom_rows = ec.read_rows(ECOM_SHEET_ID, ECOM_SHEET_TAB)
+    except Exception as e:
+        print(f"⚠️  Could not read Ecom sheet: {e}")
     try:
         infl_rows = ec.read_rows(INFL_SHEET_ID, INFL_SHEET_TAB)
     except Exception as e:
@@ -288,24 +356,24 @@ def run_once():
 
     # ── Compute ────────────────────────────────────────────────────
     b2b = compute_b2b(b2b_rows, b2b_in, b2b_out)
+    ecom = compute_ecom(ecom_rows)
     infl = compute_infl(infl_rows, pricing_rows, infl_in, infl_out)
 
-    print("\n--- B2B stats ---")
-    for k, v in b2b.items():
-        print(f"  {k}: {v}")
-    print("\n--- Influencer stats ---")
-    for k, v in infl.items():
-        print(f"  {k}: {v}")
+    for name, block in (("B2B", b2b), ("Ecom", ecom), ("Influencer", infl)):
+        print(f"\n--- {name} stats ---")
+        for k, v in block.items():
+            print(f"  {k}: {v}")
 
     # ── Outputs ────────────────────────────────────────────────────
     print()
     append_stats("B2B", B2B_SHEET_ID, STATS_TAB, b2b)
+    append_stats("Ecom", ECOM_SHEET_ID, STATS_TAB, ecom)
     append_stats("Influencer", INFL_SHEET_ID, STATS_TAB, infl)
-    send_summary(b2b, infl)
+    send_summary(b2b, ecom, infl)
 
     print("\n=== done. ===")
     return {"parser": "crm_stats", "dry_run": DRY_RUN,
-            "b2b": b2b, "influencer": infl, "recipient": CRM_STATS_TO}
+            "b2b": b2b, "ecom": ecom, "influencer": infl, "recipient": CRM_STATS_TO}
 
 
 if __name__ == "__main__":

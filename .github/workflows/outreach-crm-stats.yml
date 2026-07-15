@@ -34,7 +34,10 @@ jobs:
           GMAIL_APP_PW_SERHII: ${{ secrets.GMAIL_APP_PW_SERHII }}
           B2B_SHEET_ID: ${{ vars.B2B_SHEET_ID }}
           INFL_SHEET_ID: ${{ vars.INFL_SHEET_ID }}
+          ECOM_SHEET_ID: ${{ vars.ECOM_SHEET_ID }}
+          ECOM_SHEET_TAB: 'Ecom Contacts'
           CRM_STATS_TO: ${{ vars.CRM_STATS_TO }}
+          SIGNED_NOTIFY_TO: ${{ vars.SIGNED_NOTIFY_TO }}
           UTD_MAIL_SERGEY: ${{ vars.UTD_MAIL_SERGEY }}
           UTD_MAIL_SERGE: ${{ vars.UTD_MAIL_SERGE }}
         run: python crm_stats.py
