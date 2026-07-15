@@ -34,6 +34,7 @@ jobs:
           GOOGLE_CSE_IDS: ${{ secrets.GOOGLE_CSE_IDS }}
           # Общий пул ~7 рабочих CSE-ключей; из них YouTube API есть только у 3.
           # Без KEY_SLICE. Бюджет ужат под общий лимит ~700 CSE/день на все парсеры.
+          KEY_SLICE: '6:7'           # 1 выделенный YT-совместимый ключ
           CSE_BUDGET: '50'           # 50 × 2 прогона = 100 CSE/день
           YT_BUDGET: '60'
           SEARCH_PAGES: '2'          # страниц выдачи CSE на запрос (как в b2b)
