@@ -78,6 +78,9 @@ _OWN_SET = {a.lower() for a in OWN_ADDRESSES}
 # email_common "account" convention: {"user", "password"} with pw from env.
 ACCOUNTS = [a for a in (
     {"user": os.environ.get("UTD_MAIL_SERGEY", ""), "password": os.environ.get("GMAIL_APP_PW_SERGEY", "")},
+    # SERGE is the second outreach mailbox — influencer emails go from sergey AND
+    # serge, so replies land in BOTH; without this, all serge replies were unread.
+    {"user": os.environ.get("UTD_MAIL_SERGE", ""),  "password": os.environ.get("GMAIL_APP_PW_SERGE", "")},
     {"user": os.environ.get("UTD_MAIL_SERGI", ""),  "password": os.environ.get("GMAIL_APP_PW_SERGI", "")},
     {"user": os.environ.get("UTD_MAIL_SERHII", ""), "password": os.environ.get("GMAIL_APP_PW_SERHII", "")},
 ) if a["user"]]
@@ -90,8 +93,11 @@ DRY_RUN = os.environ.get("DRY_RUN", "true").strip().lower() in ("1", "true", "ye
 LOOKBACK_DAYS = int(os.environ.get("LOOKBACK_DAYS", "60"))
 
 # ONLY the influencer chain is handled here (mirror image of the agency responder,
-# which SKIPS this marker). Everything else in the mailbox is ignored.
-INFLUENCER_MARKER = re.compile(r"shopify theme review collab", re.I)
+# which SKIPS this marker). Broadened 2026-07-15: the old marker ("shopify theme
+# review collab") only matched 1 of the 6 outreach subject variants, so replies to
+# the other 5 were silently skipped. This matches all current variants; a reply
+# from a known influencer contact is also processed regardless of subject (below).
+INFLUENCER_MARKER = re.compile(r"theme review|review our shopify theme", re.I)
 
 # The 17 rate-card data fields, in the exact n8n order (drives collected/merged/JSON).
 DATA_KEYS = [
@@ -537,16 +543,16 @@ def flush_pricing():
 def process_message(account, msg, by_thread, by_email, pricing_by_email, state, stats):
     mid = msg.get("message_id", "")
 
-    # ONLY the influencer chain — everything else is ignored (mirror of agency).
-    if not INFLUENCER_MARKER.search(msg.get("subject", "") or ""):
+    # Handle the influencer chain: the subject matches the (broadened) marker OR
+    # the sender is a known influencer contact. The contact check catches replies
+    # whose subject was changed/stripped, which the marker alone would miss.
+    contact = match_contact(msg, by_thread, by_email)
+    if not INFLUENCER_MARKER.search(msg.get("subject", "") or "") and not contact:
         return
 
     # Dedup: already processed in a previous run (hashed Message-ID)?
     if ec.is_processed(state, mid):
         return
-
-    # Enrichment (runs for ALL messages, like the n8n «Обогащение» node).
-    contact = match_contact(msg, by_thread, by_email)
     contact_email = (contact["email"] if contact else "") or msg.get("from_email", "") \
         or ec.extract_failed_recipient(msg, OWN_ADDRESSES)
     contact_name = contact["name"] if contact else ""

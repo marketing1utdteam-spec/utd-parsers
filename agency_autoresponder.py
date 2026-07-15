@@ -91,7 +91,9 @@ MAX_REMINDERS = int(os.environ.get("MAX_REMINDERS", "2"))
 # Stages that receive silence reminders (contact is mid-dialogue).
 REMINDER_STAGES = {"Qualifying", "Memo Sent", "Agreement Sent"}
 
-INFLUENCER_MARKER = re.compile(r"shopify theme review collab", re.I)
+# Keep in sync with influencer_autoresponder's marker (broadened 2026-07-15) so
+# influencer replies are excluded here and handled only by the influencer responder.
+INFLUENCER_MARKER = re.compile(r"theme review|review our shopify theme", re.I)
 
 # stage → CRM Status
 STATUS_BY_STAGE = {
