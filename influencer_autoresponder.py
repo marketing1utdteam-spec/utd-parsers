@@ -167,10 +167,11 @@ SYSTEM_PROMPT = (
 "ALREADY COLLECTED data will be provided with each email. Ask ONLY for what is missing AND applicable. If everything applicable is collected, thank them warmly and say the team will review the options and get back to them shortly. Do not negotiate discounts, do not commit to any purchase, budget, or timeline. If they ask for OUR budget, politely say the budget depends on their formats and rates, and ask for their rate card instead. If they ask questions about UTD, answer briefly: official Shopify Theme Store developer, 25 themes, based in Belgium.\n\n"
 "THEMES YOU MAY NAME (every theme mention carries its link; never name other themes): Gain https://themes.shopify.com/themes/gain, Ultra https://themes.shopify.com/themes/ultra, Boutique https://themes.shopify.com/themes/boutique, Allure https://themes.shopify.com/themes/allure, Victory https://themes.shopify.com/themes/victory.\n\n"
 "YOUR TASK: read one incoming email and return STRICT JSON:\n"
-"{\"category\":\"interested|question|decline|spam\",\"note\":\"<one short sentence in RUSSIAN for the manager>\",\"reply_body\":\"<reply text or empty>\",\"data\":{\"price_article\":\"\",\"price_youtube_video\":\"\",\"price_video_mention\":\"\",\"price_shorts\":\"\",\"price_social_post\":\"\",\"price_story_mention\":\"\",\"price_newsletter\":\"\",\"packages\":\"\",\"usage_rights\":\"\",\"affiliate_revshare\":\"\",\"audience_size\":\"\",\"audience_geo\":\"\",\"expected_views\":\"\",\"channel_links\":\"\",\"media_kit\":\"\",\"platform\":\"\",\"notes\":\"\"},\"data_complete\":false}\n\n"
+"{\"category\":\"interested|question|decline|spam\",\"note\":\"<one short sentence in RUSSIAN for the manager>\",\"handoff\":false,\"handoff_note\":\"\",\"reply_body\":\"<reply text or empty>\",\"data\":{\"price_article\":\"\",\"price_youtube_video\":\"\",\"price_video_mention\":\"\",\"price_shorts\":\"\",\"price_social_post\":\"\",\"price_story_mention\":\"\",\"price_newsletter\":\"\",\"packages\":\"\",\"usage_rights\":\"\",\"affiliate_revshare\":\"\",\"audience_size\":\"\",\"audience_geo\":\"\",\"expected_views\":\"\",\"channel_links\":\"\",\"media_kit\":\"\",\"platform\":\"\",\"notes\":\"\"},\"data_complete\":false}\n\n"
 "DATA RULES: fill data fields with values extracted from THIS email verbatim (e.g. \"$300\", \"1500 EUR\", \"120k subscribers\", \"30-50k views per video\"). For each content format (the 7 price_* fields): if the creator gives a price, put it there; if the creator says they do NOT offer that format, put the exact text \"N/A\" in that field so we know it is settled and stop asking about it; leave a field EMPTY only when it is still unknown (neither a price nor a clear no). Keep asking, politely, about every price_* field that is still EMPTY until each one is either a price or \"N/A\". Use notes for anything relevant that does not fit. Set data_complete=true when, combining already-collected data and this email, EVERY price_* field is filled (a price or \"N/A\") AND audience_size and expected_views are known. At that point the rate card is finished.\n\n"
 "CATEGORY RULES (you handle everything yourself, you NEVER hand a conversation to a human):\n"
 "- interested / question: continue the dialogue per the goal, always with a reply. Use this for normal conversation AND for anything harder (contracts, payment terms, legal questions, revenue-share, aggressive negotiation): do not refuse and do not stall, answer plainly from the facts you have, and if they ask about the actual booking, contract or payment, tell them warmly that once you have their full rate card the team will send the agreement and the next steps by email. reply_body required.\n"
+"HANDOFF SIGNAL: whenever your reply tells the contact that 'the team' will handle or follow up on something you could not resolve yourself, set handoff=true and put in handoff_note (in RUSSIAN) a short summary of what they asked plus the exact problem the team needs to solve. If you fully handled it yourself, leave handoff=false. This does NOT stop you replying — you still reply; handoff just flags the item for the team.\n"
 "- decline: they clearly say they are not interested or ask to stop. reply_body empty.\n"
 "- spam: unrelated or automated mail. reply_body empty.\n"
 "REPLY RULES:\n"
@@ -279,6 +280,8 @@ def parse_ai_result(text, collected):
     note = "AI не смог разобрать письмо"
     data = {}
     complete = False
+    handoff = False
+    handoff_note = ""
     try:
         m = re.search(r"\{[\s\S]*\}", text)
         p = json.loads(m.group(0))
@@ -288,8 +291,10 @@ def parse_ai_result(text, collected):
         note = (p.get("note") or "").strip() or note
         data = p.get("data") or {}
         complete = bool(p.get("data_complete"))
+        handoff = bool(p.get("handoff"))
+        handoff_note = (p.get("handoff_note") or "").strip()
     except Exception:
-        pass
+        handoff, handoff_note = False, ""
 
     # Unparseable / missing category, or an "interested" verdict with no drafted
     # reply → we cannot act cleanly; leave it for the next run to retry (we NEVER
@@ -314,7 +319,8 @@ def parse_ai_result(text, collected):
 
     return {"category": route, "ai_category": cat, "note": note, "reply_body": reply,
             "merged": merged, "data_complete": complete,
-            "pricing_status_new": pricing_status}
+            "pricing_status_new": pricing_status,
+            "handoff": handoff, "handoff_note": handoff_note}
 
 
 def non_ai_result(pre_category):
@@ -443,6 +449,31 @@ def do_reply(account, msg, decision):
         return
     ec.send_email(account, msg["from_email"], subject, decision["reply_body"],
                   in_reply_to=msg["message_id"], references=msg["references"])
+
+
+def send_handoff_alert(account, msg, contact_email, contact_name, decision):
+    """The agent told the contact 'the team will follow up' on something it could
+    not resolve itself → email the team a summary + the problem to solve."""
+    subject = f"⚠️ Team help needed — {contact_name or contact_email}"
+    body = (
+        "The agent replied to keep the conversation going, but it could not resolve "
+        "something itself and told the contact the team will follow up. Please "
+        "handle the item below.\n\n"
+        f"Contact: {contact_name or ''} <{contact_email}>\n"
+        f"Subject: {msg.get('subject', '')}\n\n"
+        "WHAT THEY NEED / THE PROBLEM (agent summary):\n"
+        f"{decision.get('handoff_note') or '(see their message below)'}\n\n"
+        "Their message:\n"
+        f"{(msg.get('body', '') or '')[:1500]}\n\n"
+        "What the agent replied:\n"
+        f"{decision.get('reply_body', '')}\n\n"
+        "— Automated hand-off note from the UTD influencer agent"
+    )
+    if DRY_RUN:
+        print(f"  [HANDOFF] DRY_RUN — would alert team re {contact_email}")
+        return
+    ec.send_email(account, REPORT_TO, subject, body, from_name="UTD Influencer Agent")
+    print(f"  [HANDOFF] team alerted for {contact_email}: {(decision.get('handoff_note') or '')[:60]}")
 
 
 def send_deal_report(account, msg, contact_email, contact_name, decision):
@@ -637,6 +668,9 @@ def process_message(account, msg, by_thread, by_email, pricing_by_email, state, 
         # interested/question → send reply + Pricing upsert (Negotiating/Data Complete).
         do_reply(account, msg, decision)
         enqueue_pricing_upsert(contact_email, contact_name, decision, msg)
+        # Agent deferred something to "the team" → send us the summary + problem.
+        if decision.get("handoff"):
+            send_handoff_alert(account, msg, contact_email, contact_name, decision)
         # Deal closed = full rate card gathered. Hand the finished conversation to
         # the report inboxes ONCE per contact (never before it is complete).
         if decision.get("data_complete") and contact_email \

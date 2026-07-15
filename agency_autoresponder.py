@@ -188,7 +188,8 @@ SYSTEM_PROMPT = (
 "- signed: thank them for returning the signed document, welcome them to the UTD Agency Partner Program, confirm receipt and that their participation is now finalised, and outline what happens next: their first active month starts now, they report client store identifiers by the 3rd calendar day of the following month, and commission is released after the sixty day holdback. Answer any open questions.\n"
 "- info: answer their questions precisely using the facts above, including exact numbers, and still end with a small next step when one exists.\n\n"
 "YOUR TASK: read one incoming email and return STRICT JSON:\n"
-'{"category":"interested|question|decline|spam","stage":"qualify|memo|agreement_offer|agreement_ready|signed|info","note":"<one short sentence in RUSSIAN summarising the email for the manager>","reply_body":"<full reply text, or empty string>"}\n\n'
+'{"category":"interested|question|decline|spam","stage":"qualify|memo|agreement_offer|agreement_ready|signed|info","note":"<one short sentence in RUSSIAN summarising the email for the manager>","handoff":false,"handoff_note":"","reply_body":"<full reply text, or empty string>"}\n\n'
+"HANDOFF SIGNAL: whenever your reply tells the partner that 'the team' will confirm, prepare or follow up on something you could not resolve yourself (a custom legal term, a dated call, a complaint, a press query), set handoff=true and put in handoff_note (in RUSSIAN) a short summary of their request plus the exact problem the team must solve. If you handled it fully yourself, leave handoff=false. You still send the reply either way.\n\n"
 "IMPORTANT: choose stage \"signed\" ONLY when the email has attachments (has_attachments is true). A promise to sign without an attached document is NOT \"signed\".\n\n"
 "CATEGORY RULES (you close the deal yourself and NEVER hand a conversation to a human):\n"
 "- interested: they want to join, learn more, or continue the conversation. Reply per the stage rules.\n"
@@ -264,6 +265,8 @@ def parse_ai_result(text, has_attachments, prev_status):
         "qualify", "memo", "agreement_offer", "agreement_ready", "signed", "info") else ""
     reply = _clean_reply(p.get("reply_body"))
     note = (p.get("note") or "").strip() or "разобрано AI"
+    handoff = bool(p.get("handoff"))
+    handoff_note = (p.get("handoff_note") or "").strip()
 
     # We NEVER hand off to a human. If the category is missing, or it wants to
     # reply but drafted nothing, leave it for the next run to retry cleanly.
@@ -290,7 +293,8 @@ def parse_ai_result(text, has_attachments, prev_status):
         new_status = ""
     return {"category": route, "ai_category": cat, "stage": stage,
             "has_memo": has_memo, "has_contract": has_contract,
-            "new_status": new_status, "note": note, "reply_body": reply}
+            "new_status": new_status, "note": note, "reply_body": reply,
+            "handoff": handoff, "handoff_note": handoff_note}
 
 
 def non_ai_result(pre_category):
@@ -362,6 +366,32 @@ def _print_draft(kind, account, to, subject, attachment, body):
     for line in (body or "").splitlines():
         print("    " + line)
     print("=" * 70)
+
+
+def send_handoff_alert(account, msg, decision):
+    """The agent told the partner 'the team' will follow up on something it could
+    not resolve → email the team a summary + the problem to solve."""
+    frm = msg.get("from_email", "") or msg.get("from", "")
+    subject = f"⚠️ Team help needed — {frm}"
+    body = (
+        "The agent replied to keep the deal moving, but it could not resolve "
+        "something itself and told the partner the team will follow up. Please "
+        "handle the item below.\n\n"
+        f"Contact: {frm}\n"
+        f"Subject: {msg.get('subject', '')}\n\n"
+        "WHAT THEY NEED / THE PROBLEM (agent summary):\n"
+        f"{decision.get('handoff_note') or '(see their message below)'}\n\n"
+        "Their message:\n"
+        f"{(msg.get('body', '') or '')[:1500]}\n\n"
+        "What the agent replied:\n"
+        f"{decision.get('reply_body', '')}\n\n"
+        "— Automated hand-off note from the UTD agency agent"
+    )
+    if DRY_RUN:
+        print(f"  [HANDOFF] DRY_RUN — would alert team re {frm}")
+        return
+    ec.send_email(account, REVIEW_TO, subject, body, from_name="UTD Agency Agent")
+    print(f"  [HANDOFF] team alerted for {frm}: {(decision.get('handoff_note') or '')[:60]}")
 
 
 def do_reply(account, msg, decision):
@@ -734,6 +764,8 @@ def process_message(account, msg, by_email, by_token, state, stats):
         do_reply(account, msg, decision)
         update_status(msg, contact, decision)
         record_outbound(state, msg["from_email"], decision["new_status"], account["user"])
+        if decision.get("handoff"):
+            send_handoff_alert(account, msg, decision)
     elif route == "signed":
         do_signed(account, msg, decision, contact)
         update_status(msg, contact, decision)
