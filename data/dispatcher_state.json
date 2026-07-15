@@ -1,32 +1,32 @@
 {
  "b2b_serge": {
   "date": "2026-07-15",
-  "last_sent_iso": "2026-07-15T13:53:17.021898+02:00",
-  "sent_today": 10
+  "last_sent_iso": "2026-07-15T14:28:38.047335+02:00",
+  "sent_today": 11
  },
  "b2b_sergey": {
   "date": "2026-07-15",
-  "last_sent_iso": "2026-07-15T13:53:17.021898+02:00",
-  "sent_today": 10
+  "last_sent_iso": "2026-07-15T14:28:38.047335+02:00",
+  "sent_today": 11
  },
  "ecom_serge": {
   "date": "2026-07-15",
-  "last_sent_iso": "2026-07-15T13:53:17.021898+02:00",
-  "sent_today": 10
+  "last_sent_iso": "2026-07-15T14:28:38.047335+02:00",
+  "sent_today": 11
  },
  "ecom_sergey": {
   "date": "2026-07-15",
-  "last_sent_iso": "2026-07-15T13:53:17.021898+02:00",
-  "sent_today": 10
+  "last_sent_iso": "2026-07-15T14:28:38.047335+02:00",
+  "sent_today": 11
  },
  "infl_serge": {
   "date": "2026-07-15",
-  "last_sent_iso": "2026-07-15T13:05:16.617405+02:00",
-  "sent_today": 4
+  "last_sent_iso": "2026-07-15T14:28:38.047335+02:00",
+  "sent_today": 5
  },
  "infl_sergey": {
   "date": "2026-07-15",
-  "last_sent_iso": "2026-07-15T13:05:16.617405+02:00",
-  "sent_today": 4
+  "last_sent_iso": "2026-07-15T14:28:38.047335+02:00",
+  "sent_today": 5
  }
 }
