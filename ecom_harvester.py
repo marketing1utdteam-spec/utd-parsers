@@ -203,7 +203,7 @@ MAILBOX_DROP_UNKNOWN  = True   # drop unverifiable results (max precision)
 DELAY_PAGE   = 1.2
 DELAY_URL    = 1.6
 DELAY_QUERY  = 2.4
-API_ROT_WAIT = 4.0
+API_ROT_WAIT = 6.0
 
 # ─── Rotating user agents ───────────────────────────────────────
 USER_AGENTS = [
@@ -1051,7 +1051,11 @@ class GoogleClient:
     def search(self, query: str, start: int = 1) -> list:
         if self.exhausted():
             return []
-        for _ in range(len(self.pairs)):
+        # Try at most a FEW keys per query, paced, so we never burst the SAME query
+        # across many keys (Google flags healthy keys for that). Advance the key on
+        # success so the NEXT query spreads onto a different key.
+        tries = min(3, max(1, len(self.pairs) - len(self.dead)))
+        for _attempt in range(tries):
             if self.exhausted():
                 break
             if self.idx in self.dead:
@@ -1068,16 +1072,15 @@ class GoogleClient:
                 )
                 self.calls += 1
                 if resp.status_code == 200:
+                    self._advance()   # round-robin: next query → next key
                     return [it["link"] for it in resp.json().get("items", []) if "link" in it]
                 if resp.status_code in (429, 403):
                     if self._is_transient_rate(resp):
-                        # Momentary rate limit — pause and try another key, but
-                        # keep this one alive (a burst must not burn good keys).
-                        self._rotate(f"HTTP {resp.status_code} rate")
+                        self._rotate(f"HTTP {resp.status_code} rate")  # pause + next key
                     else:
-                        # Daily quota OR permanent block — drop for the run.
                         self._drop(f"HTTP {resp.status_code}")
                 elif resp.status_code == 400:
+                    self._advance()
                     return []
                 else:
                     self._rotate(f"HTTP {resp.status_code}")
@@ -1651,6 +1654,8 @@ class EcomHarvester:
             log.info(f"\n  [G {i}/{len(queries)}] {q}")
             urls = []
             for page in range(SEARCH_PAGES):
+                if page:
+                    time.sleep(DELAY_URL)   # pause between page fetches of one query
                 batch = self.google.search(q, start=1 + page * RESULTS_PER_QUERY)
                 urls += batch
                 if len(batch) < RESULTS_PER_QUERY:

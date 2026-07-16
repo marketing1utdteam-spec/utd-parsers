@@ -183,7 +183,7 @@ MAILBOX_DROP_UNKNOWN  = True   # drop unverifiable results (max precision)
 DELAY_PAGE   = 1.2
 DELAY_URL    = 1.6
 DELAY_QUERY  = 2.4
-API_ROT_WAIT = 4.0
+API_ROT_WAIT = 6.0
 
 # ─── Rotating user agents ───────────────────────────────────────
 USER_AGENTS = [
@@ -1052,7 +1052,12 @@ class GoogleClient:
         # non-English veins (DE/FR/ES/...). When None, no lr → widest results.
         if self.exhausted():
             return []
-        for _ in range(len(self.pairs)):
+        # Try at most a FEW different keys for this one query, pausing between
+        # tries, so the SAME query is never burst across many keys at once (Google
+        # flags healthy keys when you do that). On success, advance the key so the
+        # NEXT query uses a different one — spreading load evenly across the pool.
+        tries = min(3, max(1, len(self.pairs) - len(self.dead)))
+        for _attempt in range(tries):
             if self.exhausted():
                 break
             if self.idx in self.dead:
@@ -1072,17 +1077,15 @@ class GoogleClient:
                 )
                 self.calls += 1
                 if resp.status_code == 200:
+                    self._advance()   # round-robin: next query hits the next key
                     return [it["link"] for it in resp.json().get("items", []) if "link" in it]
                 if resp.status_code in (429, 403):
                     if self._is_transient_rate(resp):
-                        # Momentary rate limit — pause and try another key, but
-                        # keep this one alive (a burst must not burn good keys).
-                        self._rotate(f"HTTP {resp.status_code} rate")
+                        self._rotate(f"HTTP {resp.status_code} rate")  # pause + next key
                     else:
-                        # Daily quota OR permanent block (accessNotConfigured /
-                        # no-access / invalid) — drop this key for the run.
                         self._drop(f"HTTP {resp.status_code}")
                 elif resp.status_code == 400:
+                    self._advance()
                     return []
                 else:
                     self._rotate(f"HTTP {resp.status_code}")
@@ -1090,6 +1093,8 @@ class GoogleClient:
                 self._rotate("timeout")
             except requests.RequestException as e:
                 self._rotate(str(e)[:40])
+        # Could not get this query after a few paced tries → skip it (a DIFFERENT
+        # query runs next, on a rested key). Never hammer one query across all keys.
         if self.exhausted():
             log.error("  ❌ All API pairs out of quota — stopping search.")
         return []
@@ -1549,6 +1554,8 @@ class EmailHarvester:
             log.info(f"\n  [G {i}/{len(queries)}] ({lang}) {q}")
             urls = []
             for page in range(SEARCH_PAGES):
+                if page:
+                    time.sleep(DELAY_URL)   # pause between page fetches of one query
                 batch = self.google.search(q, start=1 + page * RESULTS_PER_QUERY,
                                            lang=lang)
                 urls += batch

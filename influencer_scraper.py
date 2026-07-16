@@ -359,7 +359,7 @@ class KeyRotator:
         self.exhausted.add(self.idx)
         self._advance()
 
-    def soft_rotate(self, reason="rate", wait=4.0):
+    def soft_rotate(self, reason="rate", wait=6.0):
         """Transient per-minute rate limit — pause and move to another key, but
         keep this one alive (marking it dead would burn healthy keys)."""
         logging.info(f"Key idx {self.idx} rate-limited ({reason}); pause {wait}s, next key.")
@@ -550,6 +550,7 @@ def cse_search(query, start=1):
         if r.status_code == 200:
             data  = r.json()
             total = int(data.get("searchInformation", {}).get("totalResults", "0"))
+            cse_rotator._advance()   # round-robin: spread queries across all keys
             return data.get("items", []), None, total
         if r.status_code in (403, 429):
             if _is_transient_rate(r):
