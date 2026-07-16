@@ -171,7 +171,7 @@ SYSTEM_PROMPT = (
 "DATA RULES: fill data fields with values extracted from THIS email verbatim (e.g. \"$300\", \"1500 EUR\", \"120k subscribers\", \"30-50k views per video\"). For each content format (the 7 price_* fields): if the creator gives a price, put it there; if the creator says they do NOT offer that format, put the exact text \"N/A\" in that field so we know it is settled and stop asking about it; leave a field EMPTY only when it is still unknown (neither a price nor a clear no). Keep asking, politely, about every price_* field that is still EMPTY until each one is either a price or \"N/A\". Use notes for anything relevant that does not fit. Set data_complete=true when, combining already-collected data and this email, EVERY price_* field is filled (a price or \"N/A\") AND audience_size and expected_views are known. At that point the rate card is finished.\n\n"
 "CATEGORY RULES (you handle everything yourself, you NEVER hand a conversation to a human):\n"
 "- interested / question: continue the dialogue per the goal, always with a reply. Use this for normal conversation AND for anything harder (contracts, payment terms, legal questions, revenue-share, aggressive negotiation): do not refuse and do not stall, answer plainly from the facts you have, and if they ask about the actual booking, contract or payment, tell them warmly that once you have their full rate card the team will send the agreement and the next steps by email. reply_body required.\n"
-"HANDOFF SIGNAL: whenever your reply tells the contact that 'the team' will handle or follow up on something you could not resolve yourself, set handoff=true and put in handoff_note (in RUSSIAN) a short summary of what they asked plus the exact problem the team needs to solve. If you fully handled it yourself, leave handoff=false. This does NOT stop you replying — you still reply; handoff just flags the item for the team.\n"
+"HANDOFF SIGNAL: whenever your reply tells the contact that 'the team' will handle or follow up on something you could not resolve yourself, set handoff=true and write handoff_note in RUSSIAN as a DETAILED brief for the team (4-7 sentences, not one line): (1) кто этот контакт и что за компания/канал, (2) что именно они просят — со всеми конкретными деталями: цифры, условия, форматы, ссылки, номера тикетов, имена, (3) почему это выходит за рамки того, что ты можешь сам, (4) какое конкретное решение или действие требуется от команды, (5) любой контекст из переписки, важный для решения. Пиши развёрнуто и конкретно, чтобы человек всё понял без открытия оригинала. Если решил сам — handoff=false. Это НЕ отменяет твой ответ клиенту.\n"
 "- decline: they clearly say they are not interested or ask to stop. reply_body empty.\n"
 "- spam: unrelated or automated mail. reply_body empty.\n"
 "REPLY RULES:\n"
@@ -451,23 +451,36 @@ def do_reply(account, msg, decision):
                   in_reply_to=msg["message_id"], references=msg["references"])
 
 
+def _readable_thread(account, msg):
+    """Full conversation rendered as clearly-separated messages (who/when/what)."""
+    try:
+        return ec.format_thread_readable(
+            ec.fetch_thread(account, str(msg.get("gm_thrid", "") or ""), OWN_ADDRESSES))
+    except Exception:
+        return ec.format_thread_readable([{
+            "direction": "received", "from_email": msg.get("from_email", ""),
+            "date": msg.get("date", ""), "subject": msg.get("subject", ""),
+            "body": msg.get("body", "")}])
+
+
 def send_handoff_alert(account, msg, contact_email, contact_name, decision):
     """The agent told the contact 'the team will follow up' on something it could
-    not resolve itself → email the team a summary + the problem to solve."""
-    subject = f"⚠️ Team help needed — {contact_name or contact_email}"
+    not resolve itself → email the team a DETAILED brief + the separated thread."""
+    subject = f"⚠️ Требуется команда (инфлюенсер) — {contact_name or contact_email}"
     body = (
-        "The agent replied to keep the conversation going, but it could not resolve "
-        "something itself and told the contact the team will follow up. Please "
-        "handle the item below.\n\n"
-        f"Contact: {contact_name or ''} <{contact_email}>\n"
-        f"Subject: {msg.get('subject', '')}\n\n"
-        "WHAT THEY NEED / THE PROBLEM (agent summary):\n"
-        f"{decision.get('handoff_note') or '(see their message below)'}\n\n"
-        "Their message:\n"
-        f"{(msg.get('body', '') or '')[:1500]}\n\n"
-        "What the agent replied:\n"
+        "Агент продолжил диалог сам, но не смог что-то решить и сказал контакту, "
+        "что команда свяжется. Ниже — что нужно сделать.\n\n"
+        "════════ КРАТКО ════════\n"
+        f"Контакт:  {contact_name or ''} <{contact_email}>\n"
+        f"Ящик:     {account.get('user', '')}\n"
+        f"Тема:     {msg.get('subject', '')}\n\n"
+        "ЧТО НУЖНО / ПРОБЛЕМА (развёрнуто от агента):\n"
+        f"{decision.get('handoff_note') or '(см. переписку ниже)'}\n\n"
+        "════════ ЧТО АГЕНТ ОТВЕТИЛ КЛИЕНТУ ════════\n"
         f"{decision.get('reply_body', '')}\n\n"
-        "— Automated hand-off note from the UTD influencer agent"
+        "════════ ПОЛНАЯ ПЕРЕПИСКА (по письмам) ════════\n"
+        f"{_readable_thread(account, msg)}\n\n"
+        "— Автоматическая передача от UTD influencer agent"
     )
     if DRY_RUN:
         print(f"  [HANDOFF] DRY_RUN — would alert team re {contact_email}")
@@ -482,21 +495,17 @@ def send_deal_report(account, msg, contact_email, contact_name, decision):
     merged = decision.get("merged") or {}
     rate_card = "\n".join(
         f"  {PRICING_COL_BY_KEY.get(k, k)}: {merged.get(k) or '-'}" for k in DATA_KEYS)
-    try:
-        history = get_thread_history(account, msg)
-    except Exception:
-        history = ""
-    subject = f"✅ Influencer rate card complete — {contact_name or contact_email}"
+    subject = f"✅ Прайс инфлюенсера собран — {contact_name or contact_email}"
     body = (
-        "An influencer conversation is finished: the full rate card is collected "
-        "and the deal is ready for the team to take the next step.\n\n"
-        f"Creator: {contact_name or '(unknown)'}\n"
-        f"Email:   {contact_email}\n\n"
-        "RATE CARD (a price, or N/A where the format is not offered):\n"
+        "Диалог с инфлюенсером завершён: полный прайс собран и внесён в базу, "
+        "сделка готова к следующему шагу командой.\n\n"
+        f"Инфлюенсер: {contact_name or '(неизвестно)'}\n"
+        f"Email:      {contact_email}\n\n"
+        "════════ ПРАЙС (цена, либо N/A где формат не предоставляют) ════════\n"
         f"{rate_card}\n\n"
-        "FULL CONVERSATION:\n"
-        f"{history or '(thread history unavailable)'}\n\n"
-        "— Automated report from the UTD influencer agent"
+        "════════ ПОЛНАЯ ПЕРЕПИСКА (по письмам) ════════\n"
+        f"{_readable_thread(account, msg)}\n\n"
+        "— Автоматический отчёт от UTD influencer agent"
     )
     if DRY_RUN:
         print(f"  [REPORT] DRY_RUN — would send rate-card report to {REPORT_TO}")

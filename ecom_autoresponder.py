@@ -127,7 +127,7 @@ SYSTEM_PROMPT = (
 "EVIDENCE you may cite (real and named; use AT MOST ONE per reply; never cite any other statistic; NEVER park it in its own paragraph, weave it into the sales argument at the moment you make the claim): Google/SOASTA 2017: bounce probability grows 32% as mobile load goes 1s to 3s. Deloitte and Google 'Milliseconds Make Millions' 2020: a 0.1s speed improvement lifted retail conversions ~8.4%. Portent 2022: 1s sites convert ~2.5x better than 5s sites. Baymard Institute: ~70% of carts are abandoned; better checkout design alone recovers ~35% conversion for an average large store. Business cases (published by Google/web.dev): Vodafone made pages 31% faster and sales rose 8%; Rakuten 24 invested in Core Web Vitals and got +33% conversion and +53% revenue per visitor; Swappie grew mobile revenue 42% after speeding up its mobile site. These prove the MECHANISM; never claim a specific result for our themes.\n\n"
 "Return STRICT JSON: {\"category\":\"interested|question|decline|spam\",\"deal_closed\":false,\"handoff\":false,\"handoff_note\":\"\",\"note\":\"<short RU>\",\"reply_body\":\"<reply or empty>\"}\n"
 "- deal_closed: set true ONLY when the merchant clearly commits to going ahead with a theme (they say they will buy it, are purchasing it, ask exactly how to complete the purchase, or confirm they picked it). A general 'interested' is NOT closed. When true, still write a warm reply that helps them finish the purchase.\n"
-"- handoff: set true whenever your reply tells the merchant that 'the team' will follow up on something you could not resolve yourself (custom development, a dated call, a contract point, anything not in the facts). Put in handoff_note (in RUSSIAN) a short summary of their request plus the exact problem the team must solve. Leave false if you handled it fully. You still send the reply either way.\n"
+"- handoff: set true whenever your reply tells the merchant that 'the team' will follow up on something you could not resolve yourself (custom development, a dated call, a contract point, anything not in the facts). Write handoff_note in RUSSIAN as a DETAILED brief for the team (4-7 sentences, not one line): (1) что за магазин и кто пишет, (2) что именно просят — со всеми деталями: цифры, требования, ссылки, (3) почему это вне того, что ты можешь сам, (4) какое решение или действие нужно от команды, (5) важный контекст из переписки. Развёрнуто и конкретно, чтобы человек всё понял без открытия оригинала. Leave false if you handled it fully. You still send the reply either way.\n"
 "- interested/question: reply_body required. WRITING RULES:\n"
 "  * Reply in the LANGUAGE of the incoming email.\n"
 "  * SIMPLE ENGLISH for non-native readers (and the same simple wording in any other language): common everyday words, and write in LONG, flowing, simple sentences that go straight to the point (never short choppy ones) — real people write long simple sentences, not staccato fragments. No idioms, no slang, no fancy phrases ('caught my eye', 'worth a look' and anything similar are forbidden). If a 12-year-old would not understand a sentence, rewrite it.\n"
@@ -337,25 +337,38 @@ def do_reply(account, msg, decision):
                   in_reply_to=msg["message_id"], references=msg["references"])
 
 
+def _readable_thread(account, msg, contact):
+    """Full conversation rendered as clearly-separated messages (who/when/what)."""
+    try:
+        return ec.format_thread_readable(
+            ec.fetch_thread(account, str(msg.get("gm_thrid", "") or ""), OWN_ADDRESSES))
+    except Exception:
+        return ec.format_thread_readable([{
+            "direction": "received", "from_email": msg.get("from_email", ""),
+            "date": msg.get("date", ""), "subject": msg.get("subject", ""),
+            "body": msg.get("body", "")}])
+
+
 def send_handoff_alert(account, msg, contact_email, contact, decision):
     """The agent told the merchant 'the team' will follow up on something it could
-    not resolve → email the team a summary + the problem to solve."""
+    not resolve → email the team a DETAILED brief + the separated thread."""
     store = (contact.get("store") if contact else "") or contact_email
-    subject = f"⚠️ Team help needed — {store}"
+    subject = f"⚠️ Требуется команда (ecom) — {store}"
     body = (
-        "The agent replied to keep the sale moving, but it could not resolve "
-        "something itself and told the merchant the team will follow up. Please "
-        "handle the item below.\n\n"
-        f"Store:   {store}\n"
-        f"Email:   {contact_email}\n"
-        f"Subject: {msg.get('subject', '')}\n\n"
-        "WHAT THEY NEED / THE PROBLEM (agent summary):\n"
-        f"{decision.get('handoff_note') or '(see their message below)'}\n\n"
-        "Their message:\n"
-        f"{(msg.get('body', '') or '')[:1500]}\n\n"
-        "What the agent replied:\n"
+        "Агент продолжил продажу сам, но не смог что-то решить и сказал мерчанту, "
+        "что команда свяжется. Ниже — что нужно сделать.\n\n"
+        "════════ КРАТКО ════════\n"
+        f"Магазин:  {store}\n"
+        f"Email:    {contact_email}\n"
+        f"Ящик:     {account.get('user', '')}\n"
+        f"Тема:     {msg.get('subject', '')}\n\n"
+        "ЧТО НУЖНО / ПРОБЛЕМА (развёрнуто от агента):\n"
+        f"{decision.get('handoff_note') or '(см. переписку ниже)'}\n\n"
+        "════════ ЧТО АГЕНТ ОТВЕТИЛ ════════\n"
         f"{decision.get('reply_body', '')}\n\n"
-        "— Automated hand-off note from the UTD ecom agent"
+        "════════ ПОЛНАЯ ПЕРЕПИСКА (по письмам) ════════\n"
+        f"{_readable_thread(account, msg, contact)}\n\n"
+        "— Автоматическая передача от UTD ecom agent"
     )
     if DRY_RUN:
         print(f"  [HANDOFF] DRY_RUN — would alert team re {contact_email}")
@@ -368,19 +381,15 @@ def send_deal_report(account, msg, contact_email, contact, decision):
     """Deal closed (merchant committed to buying) → email the finished conversation
     to the team report inboxes. Sent once per contact."""
     store = (contact.get("store") if contact else "") or "(store)"
-    try:
-        history = get_thread_history(account, msg, contact)
-    except Exception:
-        history = ""
-    subject = f"✅ Ecom deal closed — {store}"
+    subject = f"✅ Ecom-сделка закрыта — {store}"
     body = (
-        "A store merchant has committed to buying a UTD theme — the conversation is "
-        "ready for the team to help them finish.\n\n"
-        f"Store:   {store}\n"
+        "Мерчант решил купить тему UTD — диалог готов, команда может помочь "
+        "завершить покупку.\n\n"
+        f"Магазин: {store}\n"
         f"Email:   {contact_email}\n\n"
-        "FULL CONVERSATION:\n"
-        f"{history or '(thread history unavailable)'}\n\n"
-        "— Automated report from the UTD ecom agent"
+        "════════ ПОЛНАЯ ПЕРЕПИСКА (по письмам) ════════\n"
+        f"{_readable_thread(account, msg, contact)}\n\n"
+        "— Автоматический отчёт от UTD ecom agent"
     )
     if DRY_RUN:
         print(f"  [REPORT] DRY_RUN — would send closed-deal report to {REPORT_TO}")

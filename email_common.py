@@ -377,7 +377,8 @@ def fetch_thread(account, gm_thrid, own_addresses=(), all_mail="[Gmail]/All Mail
                 "from_email": frm_email,
                 "subject": str(eml.get("Subject", "")) or "(no subject)",
                 "direction": "sent" if frm_email in own else "received",
-                "snippet": body[:600],
+                "snippet": body[:1000],
+                "body": body,
                 "attachment_names": [a["filename"] for a in atts],
                 "has_attachments": len(atts) > 0,
             })
@@ -396,6 +397,32 @@ def fetch_thread(account, gm_thrid, own_addresses=(), all_mail="[Gmail]/All Mail
     for m in msgs:
         m.pop("_sortkey", None)
     return msgs
+
+
+def format_thread_readable(thread, per_msg=1400):
+    """Human-readable rendering of a fetch_thread() list for hand-off / report
+    emails: every message on its own, clearly separated, with WHO wrote it, WHEN,
+    the subject, attachments, and its text — so nothing blurs into one block."""
+    if not thread:
+        return "(история переписки недоступна)"
+    out = []
+    for i, m in enumerate(thread, 1):
+        who = ("МЫ → клиенту (UTD)" if m.get("direction") == "sent"
+               else f"КЛИЕНТ → нам ({m.get('from_email', '')})")
+        atts = m.get("attachment_names") or []
+        att = ("\nВложения: " + ", ".join(atts)) if atts else ""
+        text = (m.get("body") or m.get("snippet") or "").strip()
+        if len(text) > per_msg:
+            text = text[:per_msg] + " […]"
+        out.append(
+            "─────────── письмо %d ───────────\n"
+            "Когда: %s\n"
+            "Кто:   %s\n"
+            "Тема:  %s%s\n\n"
+            "%s" % (i, str(m.get("date", ""))[:16], who,
+                    m.get("subject", ""), att, text or "(пусто)")
+        )
+    return "\n\n".join(out)
 
 
 _DSN_PHRASE_RE = re.compile(

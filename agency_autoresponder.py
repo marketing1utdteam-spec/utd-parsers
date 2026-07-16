@@ -189,7 +189,7 @@ SYSTEM_PROMPT = (
 "- info: answer their questions precisely using the facts above, including exact numbers, and still end with a small next step when one exists.\n\n"
 "YOUR TASK: read one incoming email and return STRICT JSON:\n"
 '{"category":"interested|question|decline|spam","stage":"qualify|memo|agreement_offer|agreement_ready|signed|info","note":"<one short sentence in RUSSIAN summarising the email for the manager>","handoff":false,"handoff_note":"","reply_body":"<full reply text, or empty string>"}\n\n'
-"HANDOFF SIGNAL: whenever your reply tells the partner that 'the team' will confirm, prepare or follow up on something you could not resolve yourself (a custom legal term, a dated call, a complaint, a press query), set handoff=true and put in handoff_note (in RUSSIAN) a short summary of their request plus the exact problem the team must solve. If you handled it fully yourself, leave handoff=false. You still send the reply either way.\n\n"
+"HANDOFF SIGNAL: whenever your reply tells the partner that 'the team' will confirm, prepare or follow up on something you could not resolve yourself (a custom legal term, a dated call, a complaint, a press query), set handoff=true and write handoff_note in RUSSIAN as a DETAILED brief for the team (4-7 sentences, not one line): (1) кто этот партнёр / что за агентство, (2) что именно они просят — со всеми деталями: цифры, условия, конкретные пункты договора, ссылки, (3) почему это вне стандартной программы, (4) какое решение или действие нужно от команды, (5) на каком этапе воронки сделка. Развёрнуто и конкретно, чтобы человек всё понял без открытия оригинала. Если решил сам — handoff=false. Ответ клиенту всё равно отправляется.\n\n"
 "IMPORTANT: choose stage \"signed\" ONLY when the email has attachments (has_attachments is true). A promise to sign without an attached document is NOT \"signed\".\n\n"
 "CATEGORY RULES (you close the deal yourself and NEVER hand a conversation to a human):\n"
 "- interested: they want to join, learn more, or continue the conversation. Reply per the stage rules.\n"
@@ -368,24 +368,37 @@ def _print_draft(kind, account, to, subject, attachment, body):
     print("=" * 70)
 
 
+def _readable_thread(account, msg):
+    """Full conversation rendered as clearly-separated messages (who/when/what)."""
+    try:
+        return ec.format_thread_readable(
+            ec.fetch_thread(account, str(msg.get("gm_thrid", "") or ""), OWN_ADDRESSES))
+    except Exception:
+        return ec.format_thread_readable([{
+            "direction": "received", "from_email": msg.get("from_email", ""),
+            "date": msg.get("date", ""), "subject": msg.get("subject", ""),
+            "body": msg.get("body", "")}])
+
+
 def send_handoff_alert(account, msg, decision):
     """The agent told the partner 'the team' will follow up on something it could
-    not resolve → email the team a summary + the problem to solve."""
+    not resolve → email the team a DETAILED brief + the separated thread."""
     frm = msg.get("from_email", "") or msg.get("from", "")
-    subject = f"⚠️ Team help needed — {frm}"
+    subject = f"⚠️ Требуется команда (b2b) — {frm}"
     body = (
-        "The agent replied to keep the deal moving, but it could not resolve "
-        "something itself and told the partner the team will follow up. Please "
-        "handle the item below.\n\n"
-        f"Contact: {frm}\n"
-        f"Subject: {msg.get('subject', '')}\n\n"
-        "WHAT THEY NEED / THE PROBLEM (agent summary):\n"
-        f"{decision.get('handoff_note') or '(see their message below)'}\n\n"
-        "Their message:\n"
-        f"{(msg.get('body', '') or '')[:1500]}\n\n"
-        "What the agent replied:\n"
+        "Агент продолжил сделку сам, но не смог что-то решить и сказал партнёру, "
+        "что команда свяжется. Ниже — что нужно сделать.\n\n"
+        "════════ КРАТКО ════════\n"
+        f"Контакт:  {frm}\n"
+        f"Ящик:     {account.get('user', '')}\n"
+        f"Тема:     {msg.get('subject', '')}\n\n"
+        "ЧТО НУЖНО / ПРОБЛЕМА (развёрнуто от агента):\n"
+        f"{decision.get('handoff_note') or '(см. переписку ниже)'}\n\n"
+        "════════ ЧТО АГЕНТ ОТВЕТИЛ ════════\n"
         f"{decision.get('reply_body', '')}\n\n"
-        "— Automated hand-off note from the UTD agency agent"
+        "════════ ПОЛНАЯ ПЕРЕПИСКА (по письмам) ════════\n"
+        f"{_readable_thread(account, msg)}\n\n"
+        "— Автоматическая передача от UTD agency agent"
     )
     if DRY_RUN:
         print(f"  [HANDOFF] DRY_RUN — would alert team re {frm}")
@@ -424,6 +437,7 @@ def do_signed(account, msg, decision, contact):
 
     # 2) deal review to the team, with the signed document attached
     company = (contact or {}).get("company", "") or msg["from_email"]
+    msg["_thread"] = _readable_thread(account, msg)   # full separated conversation
     review_text = build_review_text(msg, contact)
     signed_path = _dump_largest_attachment(msg)
     review_subject = f"✅ Подписанный контракт: {company} — ревью сделки"
@@ -439,7 +453,7 @@ def build_review_text(msg, contact):
     company = (contact or {}).get("company", "") or "не определена"
     status = (contact or {}).get("status", "") or "нет"
     user = (f"Данные CRM: компания {company}, email {msg['from_email']}, "
-            f"статус был: {status}.\n\nПоследнее письмо партнёра:\n{msg['body']}")
+            f"статус был: {status}.\n\nПолная переписка:\n{msg.get('_thread') or msg['body']}")
     review = ec.call_claude(REVIEW_SYSTEM, user, max_tokens=2000)
     if not review:
         review = ("Автоматическое ревью не сформировано (AI недоступен). Данные сделки:\n\n"
