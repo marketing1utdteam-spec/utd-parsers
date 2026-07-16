@@ -64,6 +64,7 @@ REVIEW_TO = [x.strip() for x in
 # Shared "Notable emails" log (unusual/strange messages → address + mailbox).
 NOTABLE_SHEET_ID = os.environ.get("NOTABLE_SHEET_ID") or os.environ.get("B2B_SHEET_ID", "")
 NOTABLE_TAB = os.environ.get("NOTABLE_TAB", "Notable")
+CLOSED_TAB = os.environ.get("CLOSED_TAB", "Closed")
 
 # Our own mailbox addresses — inbound from these is a loop, not a prospect.
 OWN_ADDRESSES = [a for a in (
@@ -455,6 +456,13 @@ def do_signed(account, msg, decision, contact):
     else:
         ec.send_email(account, REVIEW_TO, review_subject, review_text,
                       attachment_path=signed_path)
+    # Keep every closed deal in the shared Closed log (contact + short review).
+    ec.append_closed(NOTABLE_SHEET_ID, CLOSED_TAB, {
+        "Date": (msg.get("date", "") or "")[:16], "Chain": "B2B",
+        "Contact": msg.get("from_email", ""), "Company/Store": company,
+        "Account": account.get("user", ""),
+        "Outcome": "Agreement signed",
+        "Details / review": (review_text or "")[:900]})
 
 
 def build_review_text(msg, contact):

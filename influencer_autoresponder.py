@@ -107,6 +107,8 @@ REPORT_TO = [x.strip() for x in
 # in the B2B sheet by default.
 NOTABLE_SHEET_ID = os.environ.get("NOTABLE_SHEET_ID") or os.environ.get("B2B_SHEET_ID", "")
 NOTABLE_TAB = os.environ.get("NOTABLE_TAB", "Notable")
+# Shared "Closed" log — every completed chain kept with a short review + contact.
+CLOSED_TAB = os.environ.get("CLOSED_TAB", "Closed")
 
 # ONLY the influencer chain is handled here (mirror image of the agency responder,
 # which SKIPS this marker). Broadened 2026-07-15: the old marker ("shopify theme
@@ -705,6 +707,15 @@ def process_message(account, msg, by_thread, by_email, pricing_by_email, state, 
         if decision.get("data_complete") and contact_email \
                 and not ec.is_processed(state, "reported:" + contact_email.lower()):
             send_deal_report(account, msg, contact_email, contact_name, decision)
+            merged = decision.get("merged") or {}
+            rate = "; ".join(f"{PRICING_COL_BY_KEY.get(k, k)}={merged.get(k)}"
+                             for k in DATA_KEYS if merged.get(k))
+            ec.append_closed(NOTABLE_SHEET_ID, CLOSED_TAB, {
+                "Date": (msg.get("date", "") or "")[:16], "Chain": "Influencer",
+                "Contact": contact_email, "Company/Store": contact_name,
+                "Account": account.get("user", ""),
+                "Outcome": "Rate card collected (ready for our content)",
+                "Details / review": rate})
             ec.mark_processed(state, "reported:" + contact_email.lower())
     elif route == "decline":
         # Sheet1 Status='Declined' + Pricing upsert (Contact Status='Declined'). No reply.

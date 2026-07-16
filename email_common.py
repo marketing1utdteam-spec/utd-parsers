@@ -529,6 +529,39 @@ def open_worksheet(sheet_id, tab):
     return _open_ws(sheet_id, tab)
 
 
+CLOSED_HEADER = ["Date", "Chain", "Contact", "Company/Store", "Account",
+                 "Outcome", "Details / review"]
+
+
+def append_closed(sheet_id, tab, row):
+    """Append ONE completed chain to the shared 'Closed' log so every finished
+    deal (whether or not a notification email was sent) is kept with a short
+    review + full contact — the team works these ready people later. `row` is a
+    dict keyed by CLOSED_HEADER. Native append_row auto-grows the grid."""
+    if not sheet_id:
+        return False
+    try:
+        gc = _get_gspread_client()
+        ss = gc.open_by_key(sheet_id)
+        try:
+            ws = ss.worksheet(tab)
+        except Exception:
+            ws = ss.add_worksheet(title=tab, rows=2000, cols=len(CLOSED_HEADER))
+            with_sheets_backoff(lambda: ws.append_row(
+                CLOSED_HEADER, value_input_option="USER_ENTERED"))
+        head = ws.row_values(1)
+        if not head:
+            with_sheets_backoff(lambda: ws.append_row(
+                CLOSED_HEADER, value_input_option="USER_ENTERED"))
+            head = CLOSED_HEADER
+        with_sheets_backoff(lambda: ws.append_row(
+            [row.get(h, "") for h in head], value_input_option="USER_ENTERED"))
+        return True
+    except Exception as e:
+        print(f"  [CLOSED] append failed: {e}")
+        return False
+
+
 NOTABLE_HEADER = ["Date", "Chain", "Account", "From", "Subject", "Why notable"]
 
 

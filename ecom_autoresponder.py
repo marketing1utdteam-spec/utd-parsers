@@ -101,6 +101,7 @@ REPORT_TO = [x.strip() for x in
 # Shared "Notable emails" log (unusual/strange messages → address + mailbox).
 NOTABLE_SHEET_ID = os.environ.get("NOTABLE_SHEET_ID") or os.environ.get("B2B_SHEET_ID", "")
 NOTABLE_TAB = os.environ.get("NOTABLE_TAB", "Notable")
+CLOSED_TAB = os.environ.get("CLOSED_TAB", "Closed")
 
 # ── In-run caches (populated once per run; NO per-email Sheets calls) ──
 # _THREAD_CACHE: {(account_user, gm_thrid): history_text} so each Gmail thread
@@ -544,6 +545,13 @@ def process_message(account, msg, by_email, by_thread, state, stats):
                 and not ec.is_processed(state, "reported:" + target.lower()):
             write_status(target, "Deal Closed")
             send_deal_report(account, msg, target, contact, decision)
+            ec.append_closed(NOTABLE_SHEET_ID, CLOSED_TAB, {
+                "Date": (msg.get("date", "") or "")[:16], "Chain": "Ecom",
+                "Contact": target,
+                "Company/Store": (contact.get("store") if contact else "") or "",
+                "Account": account.get("user", ""),
+                "Outcome": "Deal closed (merchant buying a theme)",
+                "Details / review": (decision.get("note") or "")[:900]})
             ec.mark_processed(state, "reported:" + target.lower())
         # Agent deferred something to "the team" → send us the summary + problem.
         if decision.get("handoff"):
