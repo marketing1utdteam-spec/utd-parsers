@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-scan_pricing_diag.py — DIAGNOSTIC (prints only, writes nothing).
-Figure out why the strict scan found 0 price emails: scan INBOX *and* All Mail
-across every configured mailbox, and for each external-human message report
-whether it matches MONEY, RATE_KW, or both — dumping the actual matching lines so
-we can eyeball real price quotes and recalibrate the filter.
+scan_pricing_diag.py — DIAGNOSTIC v2 (prints only, writes nothing).
+For every external-human INBOX message that contains BOTH a money amount and a
+price keyword, print a ±110-char context window around each money hit, so we can
+read the actual quote and tell real rate cards from promos/signatures/quoted-
+original noise. Line-splitting failed because bodies arrive as one HTML blob.
 """
 import os
 import re
@@ -28,51 +28,60 @@ RATE_KW = re.compile(r"\b(per\s+(?:video|post|story|reel|short|month|article|int
                      r"rate\s*card|my\s+rate|our\s+rate|rates?\b|charge|pricing|price\b|fee\b|"
                      r"sponsor|flat\s*rate|package|cost|collab|paid|budget|quote)\b", re.I)
 DAEMON = re.compile(r"mailer-daemon|postmaster|no-?reply|donotreply|notifications?@", re.I)
+PROMO = re.compile(r"millionverifier|thank you for contacting|welcome to|unsubscribe here", re.I)
 
 
-def money_lines(body):
-    out = []
-    for ln in (body or "").splitlines():
-        ln = ln.strip()
-        if ln and MONEY.search(ln) and len(ln) < 220:
-            out.append(ln)
-    return out[:5]
+def windows(body):
+    txt = re.sub(r"\s+", " ", body or "")
+    out, seen = [], set()
+    for mo in MONEY.finditer(txt):
+        a = max(0, mo.start() - 110); b = min(len(txt), mo.end() + 110)
+        w = txt[a:b].strip()
+        key = w[:40]
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(w)
+        if len(out) >= 4:
+            break
+    return out
 
 
 def main():
     if not ACCOUNTS:
         print("no mailbox credentials"); return
-    grand = {"msgs": 0, "human": 0, "money": 0, "kw": 0, "both": 0}
-    samples = []
+    seen_contacts = {}
     for acc in ACCOUNTS:
-        for box in ("INBOX", "[Gmail]/All Mail"):
-            try:
-                msgs = ec.fetch_inbox(acc, since_days=LOOKBACK_DAYS, mailbox=box)
-            except Exception as e:
-                print(f"IMAP {acc['user']} {box} failed: {e}"); continue
-            print(f">>> {acc['user']} / {box}: {len(msgs)} messages")
-            for m in msgs:
-                grand["msgs"] += 1
-                frm = (m.get("from_email", "") or "").lower()
-                if not frm or frm in OWN or DAEMON.search(m.get("from", "") or ""):
-                    continue
-                grand["human"] += 1
-                body = m.get("body", "") or ""
-                has_m = bool(MONEY.search(body))
-                has_k = bool(RATE_KW.search(body))
-                grand["money"] += has_m
-                grand["kw"] += has_k
-                if has_m and has_k:
-                    grand["both"] += 1
-                if has_m and len(samples) < 60:
-                    samples.append((frm, m.get("subject", "")[:60], box.split("/")[-1],
-                                    " | ".join(money_lines(body))[:160]))
-    print("\n==== TOTALS ====")
-    print(grand)
-    print("\n==== MONEY-matching human emails (samples) ====")
-    for frm, subj, box, lines in samples:
-        print(f"[{box}] {frm} | {subj}")
-        print(f"        {lines}")
+        try:
+            msgs = ec.fetch_inbox(acc, since_days=LOOKBACK_DAYS)
+        except Exception as e:
+            print(f"IMAP {acc['user']} failed: {e}"); continue
+        print(f">>> {acc['user']}: {len(msgs)} messages")
+        for m in msgs:
+            frm = (m.get("from_email", "") or "").lower()
+            if not frm or frm in OWN or DAEMON.search(m.get("from", "") or ""):
+                continue
+            body = m.get("body", "") or ""
+            subj = m.get("subject", "") or ""
+            if PROMO.search(body) or PROMO.search(subj):
+                continue
+            if not (MONEY.search(body) and RATE_KW.search(body)):
+                continue
+            wins = windows(body)
+            if not wins:
+                continue
+            # keep the richest sample per contact
+            prev = seen_contacts.get(frm)
+            if not prev or len(" ".join(wins)) > len(" ".join(prev[2])):
+                seen_contacts[frm] = (acc["user"], subj, wins)
+
+    print(f"\n==== {len(seen_contacts)} contacts with money+keyword context ====\n")
+    for frm, (acc, subj, wins) in seen_contacts.items():
+        print(f"### {frm}  ({acc})")
+        print(f"    subj: {subj[:70]}")
+        for w in wins:
+            print(f"    …{w}…")
+        print()
 
 
 if __name__ == "__main__":
