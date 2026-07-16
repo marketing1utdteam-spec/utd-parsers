@@ -249,7 +249,7 @@ def _gm_thrid_from_fetch(meta_bytes):
 
 
 def fetch_inbox(account, since_days=3, mailbox="INBOX", unseen_only=False,
-                limit=400):
+                limit=int(os.environ.get("INBOX_FETCH_LIMIT") or "400")):
     """Fetch messages from a Gmail mailbox over IMAP.
 
     Returns a list of dicts:
