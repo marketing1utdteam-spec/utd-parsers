@@ -1,0 +1,27 @@
+name: Backfill Closed-deals log (one-off)
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install deps
+        run: pip install -r requirements.txt
+      - name: Backfill Closed log
+        env:
+          STATE_DIR: ./data
+          GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+          B2B_SHEET_ID: ${{ vars.B2B_SHEET_ID }}
+          ECOM_SHEET_ID: ${{ vars.ECOM_SHEET_ID }}
+          ECOM_SHEET_TAB: 'Ecom Contacts'
+          INFL_SHEET_ID: ${{ vars.INFL_SHEET_ID }}
+        run: python backfill_closed.py
