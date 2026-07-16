@@ -102,6 +102,12 @@ REPORT_TO = [x.strip() for x in
              (os.environ.get("REPORT_NOTIFY_TO") or os.environ.get("SIGNED_NOTIFY_TO")
               or _DEFAULT_REPORT_TO).split(",") if x.strip()]
 
+# Shared "Notable emails" log — unusual/strange messages are recorded here (address
+# + which mailbox) so the team can later ask who wrote them. One consolidated tab
+# in the B2B sheet by default.
+NOTABLE_SHEET_ID = os.environ.get("NOTABLE_SHEET_ID") or os.environ.get("B2B_SHEET_ID", "")
+NOTABLE_TAB = os.environ.get("NOTABLE_TAB", "Notable")
+
 # ONLY the influencer chain is handled here (mirror image of the agency responder,
 # which SKIPS this marker). Broadened 2026-07-15: the old marker ("shopify theme
 # review collab") only matched 1 of the 6 outreach subject variants, so replies to
@@ -167,10 +173,11 @@ SYSTEM_PROMPT = (
 "ALREADY COLLECTED data will be provided with each email. Ask ONLY for what is missing AND applicable. If everything applicable is collected, thank them warmly and say the team will review the options and get back to them shortly. Do not negotiate discounts, do not commit to any purchase, budget, or timeline. If they ask for OUR budget, politely say the budget depends on their formats and rates, and ask for their rate card instead. If they ask questions about UTD, answer briefly: official Shopify Theme Store developer, 25 themes, based in Belgium.\n\n"
 "THEMES YOU MAY NAME (every theme mention carries its link; never name other themes): Gain https://themes.shopify.com/themes/gain, Ultra https://themes.shopify.com/themes/ultra, Boutique https://themes.shopify.com/themes/boutique, Allure https://themes.shopify.com/themes/allure, Victory https://themes.shopify.com/themes/victory.\n\n"
 "YOUR TASK: read one incoming email and return STRICT JSON:\n"
-"{\"category\":\"interested|question|decline|spam\",\"note\":\"<one short sentence in RUSSIAN for the manager>\",\"handoff\":false,\"handoff_note\":\"\",\"reply_body\":\"<reply text or empty>\",\"data\":{\"price_article\":\"\",\"price_youtube_video\":\"\",\"price_video_mention\":\"\",\"price_shorts\":\"\",\"price_social_post\":\"\",\"price_story_mention\":\"\",\"price_newsletter\":\"\",\"packages\":\"\",\"usage_rights\":\"\",\"affiliate_revshare\":\"\",\"audience_size\":\"\",\"audience_geo\":\"\",\"expected_views\":\"\",\"channel_links\":\"\",\"media_kit\":\"\",\"platform\":\"\",\"notes\":\"\"},\"data_complete\":false}\n\n"
+"{\"category\":\"interested|question|decline|spam\",\"note\":\"<one short sentence in RUSSIAN for the manager>\",\"handoff\":false,\"handoff_note\":\"\",\"notable\":false,\"notable_reason\":\"\",\"reply_body\":\"<reply text or empty>\",\"data\":{\"price_article\":\"\",\"price_youtube_video\":\"\",\"price_video_mention\":\"\",\"price_shorts\":\"\",\"price_social_post\":\"\",\"price_story_mention\":\"\",\"price_newsletter\":\"\",\"packages\":\"\",\"usage_rights\":\"\",\"affiliate_revshare\":\"\",\"audience_size\":\"\",\"audience_geo\":\"\",\"expected_views\":\"\",\"channel_links\":\"\",\"media_kit\":\"\",\"platform\":\"\",\"notes\":\"\"},\"data_complete\":false}\n\n"
 "DATA RULES: fill data fields with values extracted from THIS email verbatim (e.g. \"$300\", \"1500 EUR\", \"120k subscribers\", \"30-50k views per video\"). For each content format (the 7 price_* fields): if the creator gives a price, put it there; if the creator says they do NOT offer that format, put the exact text \"N/A\" in that field so we know it is settled and stop asking about it; leave a field EMPTY only when it is still unknown (neither a price nor a clear no). Keep asking, politely, about every price_* field that is still EMPTY until each one is either a price or \"N/A\". Use notes for anything relevant that does not fit. Set data_complete=true when, combining already-collected data and this email, EVERY price_* field is filled (a price or \"N/A\") AND audience_size and expected_views are known. At that point the rate card is finished.\n\n"
 "CATEGORY RULES (you handle everything yourself, you NEVER hand a conversation to a human):\n"
 "- interested / question: continue the dialogue per the goal, always with a reply. Use this for normal conversation AND for anything harder (contracts, payment terms, legal questions, revenue-share, aggressive negotiation): do not refuse and do not stall, answer plainly from the facts you have, and if they ask about the actual booking, contract or payment, tell them warmly that once you have their full rate card the team will send the agreement and the next steps by email. reply_body required.\n"
+"NOTABLE FLAG: set notable=true if this email is UNUSUAL or memorable — a strange or funny message, an unexpected or unusual request or offer, a big or well-known brand/person, an angry or odd tone, anything the team might want to find again later. notable_reason = one short RUSSIAN line saying what makes it stand out. Most ordinary rate-card replies are notable=false.\n"
 "HANDOFF SIGNAL: whenever your reply tells the contact that 'the team' will handle or follow up on something you could not resolve yourself, set handoff=true and write handoff_note in RUSSIAN as a DETAILED brief for the team (4-7 sentences, not one line): (1) кто этот контакт и что за компания/канал, (2) что именно они просят — со всеми конкретными деталями: цифры, условия, форматы, ссылки, номера тикетов, имена, (3) почему это выходит за рамки того, что ты можешь сам, (4) какое конкретное решение или действие требуется от команды, (5) любой контекст из переписки, важный для решения. Пиши развёрнуто и конкретно, чтобы человек всё понял без открытия оригинала. Если решил сам — handoff=false. Это НЕ отменяет твой ответ клиенту.\n"
 "- decline: they clearly say they are not interested or ask to stop. reply_body empty.\n"
 "- spam: unrelated or automated mail. reply_body empty.\n"
@@ -282,6 +289,8 @@ def parse_ai_result(text, collected):
     complete = False
     handoff = False
     handoff_note = ""
+    notable = False
+    notable_reason = ""
     try:
         m = re.search(r"\{[\s\S]*\}", text)
         p = json.loads(m.group(0))
@@ -293,8 +302,10 @@ def parse_ai_result(text, collected):
         complete = bool(p.get("data_complete"))
         handoff = bool(p.get("handoff"))
         handoff_note = (p.get("handoff_note") or "").strip()
+        notable = bool(p.get("notable"))
+        notable_reason = (p.get("notable_reason") or "").strip()
     except Exception:
-        handoff, handoff_note = False, ""
+        handoff, handoff_note, notable, notable_reason = False, "", False, ""
 
     # Unparseable / missing category, or an "interested" verdict with no drafted
     # reply → we cannot act cleanly; leave it for the next run to retry (we NEVER
@@ -320,7 +331,8 @@ def parse_ai_result(text, collected):
     return {"category": route, "ai_category": cat, "note": note, "reply_body": reply,
             "merged": merged, "data_complete": complete,
             "pricing_status_new": pricing_status,
-            "handoff": handoff, "handoff_note": handoff_note}
+            "handoff": handoff, "handoff_note": handoff_note,
+            "notable": notable, "notable_reason": notable_reason}
 
 
 def non_ai_result(pre_category):
@@ -672,6 +684,14 @@ def process_message(account, msg, by_thread, by_email, pricing_by_email, state, 
     stats[route] = stats.get(route, 0) + 1
     print(f"\n· {account['user']} ← {msg['from_email']} | {msg['subject'][:60]!r}")
     print(f"  route={route} status→{decision['pricing_status_new'] or '-'} | {decision['note']}")
+
+    # Log unusual/memorable emails so the team can look them up later.
+    if decision.get("notable"):
+        ec.append_notable(NOTABLE_SHEET_ID, NOTABLE_TAB, {
+            "Date": (msg.get("date", "") or "")[:16], "Chain": "Influencer",
+            "Account": account.get("user", ""), "From": msg.get("from_email", ""),
+            "Subject": msg.get("subject", ""), "Why notable": decision.get("notable_reason", "")})
+        print(f"  [NOTABLE] logged: {decision.get('notable_reason','')[:70]}")
 
     if route == "respond":
         # interested/question → send reply + Pricing upsert (Negotiating/Data Complete).

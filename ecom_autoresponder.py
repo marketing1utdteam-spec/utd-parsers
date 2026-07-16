@@ -98,6 +98,10 @@ REPORT_TO = [x.strip() for x in
              (os.environ.get("REPORT_NOTIFY_TO") or os.environ.get("SIGNED_NOTIFY_TO")
               or _DEFAULT_REPORT_TO).split(",") if x.strip()]
 
+# Shared "Notable emails" log (unusual/strange messages → address + mailbox).
+NOTABLE_SHEET_ID = os.environ.get("NOTABLE_SHEET_ID") or os.environ.get("B2B_SHEET_ID", "")
+NOTABLE_TAB = os.environ.get("NOTABLE_TAB", "Notable")
+
 # ── In-run caches (populated once per run; NO per-email Sheets calls) ──
 # _THREAD_CACHE: {(account_user, gm_thrid): history_text} so each Gmail thread
 # is fetched at most once per run (same pattern as agency_autoresponder).
@@ -125,7 +129,8 @@ SYSTEM_PROMPT = (
 "LINKS: theme page = https://themes.shopify.com/themes/<theme-lowercase>. Preset demo = https://themes.shopify.com/themes/<theme-lowercase>/presets/<preset-lowercase> (example: preset Roast of theme Victory = https://themes.shopify.com/themes/victory/presets/roast). EVERY time you name a theme or a preset, put its link right next to it. A demo = the live preview on that page. The only links allowed in a reply: https://utdweb.team, https://themes.shopify.com/themes?q=UTD, and these theme/preset pages.\n\n"
 "FUNNEL GOAL: SELL, do not just inform: convince this merchant to choose and buy ONE UTD theme. Stick to ONE preset/theme across the whole thread: the one the thread already points to (the preset we suggested earlier or the one they asked about). Do not switch to a new theme in every email; if the thread does not point anywhere yet, ask one easy question about their store to pick the right one. Argue from THEIR SALES (speed, layout, checkout drive orders) and prove claims with the evidence below woven into the argument. Build the argument around THEIR pain: a slow store, monthly app fees stacking up, weak conversion, a clunky theme. Value line you may use: built-in upsell, cross-sell and promo blocks replace apps that cost $15-50 per month, so the one-time theme price pays for itself. Official Shopify Theme Store status means a safe purchase: preview before publish, products stay in place. NEVER ask the merchant about their metrics, speed scores or conversion numbers (they do not know them). Answer their questions accurately using ONLY the facts above. Do not invent facts, features, prices or numbers. Do not offer discounts. Never offer or suggest a call or meeting: everything is handled by email; you may offer help by email ('reply and I'll walk you through it'). You handle the whole conversation yourself and NEVER hand it to a human: if they ask about custom development, a specific dated call, contracts, or something not covered here, do not refuse or stall, answer plainly from the facts you have and, for anything you truly cannot cover, say you will note it and the team will follow up by email, then keep guiding them toward choosing and buying the theme.\n\n"
 "EVIDENCE you may cite (real and named; use AT MOST ONE per reply; never cite any other statistic; NEVER park it in its own paragraph, weave it into the sales argument at the moment you make the claim): Google/SOASTA 2017: bounce probability grows 32% as mobile load goes 1s to 3s. Deloitte and Google 'Milliseconds Make Millions' 2020: a 0.1s speed improvement lifted retail conversions ~8.4%. Portent 2022: 1s sites convert ~2.5x better than 5s sites. Baymard Institute: ~70% of carts are abandoned; better checkout design alone recovers ~35% conversion for an average large store. Business cases (published by Google/web.dev): Vodafone made pages 31% faster and sales rose 8%; Rakuten 24 invested in Core Web Vitals and got +33% conversion and +53% revenue per visitor; Swappie grew mobile revenue 42% after speeding up its mobile site. These prove the MECHANISM; never claim a specific result for our themes.\n\n"
-"Return STRICT JSON: {\"category\":\"interested|question|decline|spam\",\"deal_closed\":false,\"handoff\":false,\"handoff_note\":\"\",\"note\":\"<short RU>\",\"reply_body\":\"<reply or empty>\"}\n"
+"Return STRICT JSON: {\"category\":\"interested|question|decline|spam\",\"deal_closed\":false,\"handoff\":false,\"handoff_note\":\"\",\"notable\":false,\"notable_reason\":\"\",\"note\":\"<short RU>\",\"reply_body\":\"<reply or empty>\"}\n"
+"- notable: set true if the email is UNUSUAL or memorable — strange/funny, an unexpected or unusual request, a big/well-known store or person, an angry or odd tone, anything worth finding again later. notable_reason = one short RUSSIAN line why. Ordinary replies are notable=false.\n"
 "- deal_closed: set true ONLY when the merchant clearly commits to going ahead with a theme (they say they will buy it, are purchasing it, ask exactly how to complete the purchase, or confirm they picked it). A general 'interested' is NOT closed. When true, still write a warm reply that helps them finish the purchase.\n"
 "- handoff: set true whenever your reply tells the merchant that 'the team' will follow up on something you could not resolve yourself (custom development, a dated call, a contract point, anything not in the facts). Write handoff_note in RUSSIAN as a DETAILED brief for the team (4-7 sentences, not one line): (1) что за магазин и кто пишет, (2) что именно просят — со всеми деталями: цифры, требования, ссылки, (3) почему это вне того, что ты можешь сам, (4) какое решение или действие нужно от команды, (5) важный контекст из переписки. Развёрнуто и конкретно, чтобы человек всё понял без открытия оригинала. Leave false if you handled it fully. You still send the reply either way.\n"
 "- interested/question: reply_body required. WRITING RULES:\n"
@@ -223,6 +228,7 @@ def parse_ai_result(text):
     """
     cat, reply, note, closed = None, "", "AI не разобрал", False
     handoff, handoff_note = False, ""
+    notable, notable_reason = False, ""
     try:
         m = re.search(r"\{[\s\S]*\}", text or "")
         p = json.loads(m.group(0))
@@ -233,6 +239,8 @@ def parse_ai_result(text):
         closed = bool(p.get("deal_closed"))
         handoff = bool(p.get("handoff"))
         handoff_note = (p.get("handoff_note") or "").strip()
+        notable = bool(p.get("notable"))
+        notable_reason = (p.get("notable_reason") or "").strip()
     except Exception:
         pass
 
@@ -247,7 +255,8 @@ def parse_ai_result(text):
         "Declined" if cat == "decline" else "")
     return {"category": route, "ai_category": cat, "note": note,
             "reply_body": reply, "new_status": status, "deal_closed": closed,
-            "handoff": handoff, "handoff_note": handoff_note}
+            "handoff": handoff, "handoff_note": handoff_note,
+            "notable": notable, "notable_reason": notable_reason}
 
 
 def non_ai_result(pre_category):
@@ -515,6 +524,14 @@ def process_message(account, msg, by_email, by_thread, state, stats):
     stats[route] = stats.get(route, 0) + 1
     print(f"\n· {account['user']} ← {msg['from_email']} | {msg['subject'][:60]!r}")
     print(f"  route={route} status→{decision['new_status'] or '-'} | {decision['note']}")
+
+    if decision.get("notable"):
+        tgt = (contact.get("email") if contact else "") or msg.get("from_email", "")
+        ec.append_notable(NOTABLE_SHEET_ID, NOTABLE_TAB, {
+            "Date": (msg.get("date", "") or "")[:16], "Chain": "Ecom",
+            "Account": account.get("user", ""), "From": tgt,
+            "Subject": msg.get("subject", ""), "Why notable": decision.get("notable_reason", "")})
+        print(f"  [NOTABLE] logged: {decision.get('notable_reason','')[:70]}")
 
     if route == "respond":
         do_reply(account, msg, decision)

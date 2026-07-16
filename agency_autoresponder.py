@@ -61,6 +61,10 @@ REVIEW_TO = [x.strip() for x in
              (os.environ.get("REPORT_NOTIFY_TO") or os.environ.get("SIGNED_NOTIFY_TO")
               or _DEFAULT_REVIEW_TO).split(",") if x.strip()]
 
+# Shared "Notable emails" log (unusual/strange messages → address + mailbox).
+NOTABLE_SHEET_ID = os.environ.get("NOTABLE_SHEET_ID") or os.environ.get("B2B_SHEET_ID", "")
+NOTABLE_TAB = os.environ.get("NOTABLE_TAB", "Notable")
+
 # Our own mailbox addresses — inbound from these is a loop, not a prospect.
 OWN_ADDRESSES = [a for a in (
     os.environ.get("UTD_MAIL_SERGEY", ""),
@@ -188,7 +192,8 @@ SYSTEM_PROMPT = (
 "- signed: thank them for returning the signed document, welcome them to the UTD Agency Partner Program, confirm receipt and that their participation is now finalised, and outline what happens next: their first active month starts now, they report client store identifiers by the 3rd calendar day of the following month, and commission is released after the sixty day holdback. Answer any open questions.\n"
 "- info: answer their questions precisely using the facts above, including exact numbers, and still end with a small next step when one exists.\n\n"
 "YOUR TASK: read one incoming email and return STRICT JSON:\n"
-'{"category":"interested|question|decline|spam","stage":"qualify|memo|agreement_offer|agreement_ready|signed|info","note":"<one short sentence in RUSSIAN summarising the email for the manager>","handoff":false,"handoff_note":"","reply_body":"<full reply text, or empty string>"}\n\n'
+'{"category":"interested|question|decline|spam","stage":"qualify|memo|agreement_offer|agreement_ready|signed|info","note":"<one short sentence in RUSSIAN summarising the email for the manager>","handoff":false,"handoff_note":"","notable":false,"notable_reason":"","reply_body":"<full reply text, or empty string>"}\n\n'
+"NOTABLE FLAG: set notable=true if this email is UNUSUAL or memorable — a strange/funny message, an unexpected or unusual request or offer, a big/well-known agency or person, an angry or odd tone, anything worth finding again later. notable_reason = one short RUSSIAN line why. Ordinary replies are notable=false.\n\n"
 "HANDOFF SIGNAL: whenever your reply tells the partner that 'the team' will confirm, prepare or follow up on something you could not resolve yourself (a custom legal term, a dated call, a complaint, a press query), set handoff=true and write handoff_note in RUSSIAN as a DETAILED brief for the team (4-7 sentences, not one line): (1) кто этот партнёр / что за агентство, (2) что именно они просят — со всеми деталями: цифры, условия, конкретные пункты договора, ссылки, (3) почему это вне стандартной программы, (4) какое решение или действие нужно от команды, (5) на каком этапе воронки сделка. Развёрнуто и конкретно, чтобы человек всё понял без открытия оригинала. Если решил сам — handoff=false. Ответ клиенту всё равно отправляется.\n\n"
 "IMPORTANT: choose stage \"signed\" ONLY when the email has attachments (has_attachments is true). A promise to sign without an attached document is NOT \"signed\".\n\n"
 "CATEGORY RULES (you close the deal yourself and NEVER hand a conversation to a human):\n"
@@ -267,6 +272,8 @@ def parse_ai_result(text, has_attachments, prev_status):
     note = (p.get("note") or "").strip() or "разобрано AI"
     handoff = bool(p.get("handoff"))
     handoff_note = (p.get("handoff_note") or "").strip()
+    notable = bool(p.get("notable"))
+    notable_reason = (p.get("notable_reason") or "").strip()
 
     # We NEVER hand off to a human. If the category is missing, or it wants to
     # reply but drafted nothing, leave it for the next run to retry cleanly.
@@ -294,7 +301,8 @@ def parse_ai_result(text, has_attachments, prev_status):
     return {"category": route, "ai_category": cat, "stage": stage,
             "has_memo": has_memo, "has_contract": has_contract,
             "new_status": new_status, "note": note, "reply_body": reply,
-            "handoff": handoff, "handoff_note": handoff_note}
+            "handoff": handoff, "handoff_note": handoff_note,
+            "notable": notable, "notable_reason": notable_reason}
 
 
 def non_ai_result(pre_category):
@@ -773,6 +781,13 @@ def process_message(account, msg, by_email, by_token, state, stats):
     print(f"\n· {account['user']} ← {msg['from_email']} | {msg['subject'][:60]!r}")
     print(f"  route={route} stage={decision['stage'] or '-'} "
           f"status→{decision['new_status'] or '-'} | {decision['note']}")
+
+    if decision.get("notable"):
+        ec.append_notable(NOTABLE_SHEET_ID, NOTABLE_TAB, {
+            "Date": (msg.get("date", "") or "")[:16], "Chain": "B2B",
+            "Account": account.get("user", ""), "From": msg.get("from_email", ""),
+            "Subject": msg.get("subject", ""), "Why notable": decision.get("notable_reason", "")})
+        print(f"  [NOTABLE] logged: {decision.get('notable_reason','')[:70]}")
 
     if route == "respond":
         do_reply(account, msg, decision)

@@ -529,6 +529,39 @@ def open_worksheet(sheet_id, tab):
     return _open_ws(sheet_id, tab)
 
 
+NOTABLE_HEADER = ["Date", "Chain", "Account", "From", "Subject", "Why notable"]
+
+
+def append_notable(sheet_id, tab, row):
+    """Append ONE unusual/strange email to the shared 'Notable' log so the team can
+    later ask 'who wrote us X' and get the address + which mailbox it hit. Creates
+    the tab + header on first use. `row` is a dict keyed by NOTABLE_HEADER names.
+    Private sheet, so storing real addresses is fine. Uses native append_row
+    (auto-grows the grid). Returns True on success."""
+    if not sheet_id:
+        return False
+    try:
+        gc = _get_gspread_client()
+        ss = gc.open_by_key(sheet_id)
+        try:
+            ws = ss.worksheet(tab)
+        except Exception:
+            ws = ss.add_worksheet(title=tab, rows=2000, cols=len(NOTABLE_HEADER))
+            with_sheets_backoff(lambda: ws.append_row(
+                NOTABLE_HEADER, value_input_option="USER_ENTERED"))
+        head = ws.row_values(1)
+        if not head:
+            with_sheets_backoff(lambda: ws.append_row(
+                NOTABLE_HEADER, value_input_option="USER_ENTERED"))
+            head = NOTABLE_HEADER
+        with_sheets_backoff(lambda: ws.append_row(
+            [row.get(h, "") for h in head], value_input_option="USER_ENTERED"))
+        return True
+    except Exception as e:
+        print(f"  [NOTABLE] append failed: {e}")
+        return False
+
+
 def _is_rate_error(e):
     err = str(e).lower()
     return any(k in err for k in ("429", "quota", "rate", "resource_exhausted", "503", "500"))
