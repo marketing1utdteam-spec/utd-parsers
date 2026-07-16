@@ -37,13 +37,28 @@ STATE_FILE = os.path.join(STATE_DIR, "dispatcher_state.json")
 # so sending happens 24/7 on Google's/GitHub's servers — the owner's computer
 # does NOT need to be on. The windows below simply restrict WHEN cold mail goes.
 BE = ZoneInfo("Europe/Brussels")
-NOW = datetime.now(timezone.utc).astimezone(BE)
+_UTC = datetime.now(timezone.utc)
+NOW = _UTC.astimezone(BE)
 TODAY = NOW.strftime("%Y-%m-%d")
 WEEKDAY = NOW.weekday()  # 0=Mon .. 6=Sun  (Belgium)
 HOUR = NOW.hour          # Belgium local hour
+UTC_HOUR = _UTC.hour     # UTC hour — used to schedule parser runs 24/7
 
 # Belgium business hours for cold outreach: Mon-Fri, 09:00-17:59.
 BE_WORK = (9, 17)
+
+# The GitHub schedule cron is throttled to ~2 firings/day, so the parsers (which
+# should collect several times a day) are triggered from THIS reliable dispatcher
+# instead. Each parser workflow is fired at the listed UTC hours, once per slot
+# per day (tracked in dispatcher_state). Needs DISPATCH_PAT (GITHUB_TOKEN can't
+# trigger another workflow). More b2b runs = more contacts, up to its CSE quota.
+PARSER_SLOTS = {
+    "parsers-b2b.yml":         [1, 6, 10, 14, 18],   # 5×/day (owner request)
+    "parsers-ecom.yml":        [3, 15],              # 2×/day (quota-heavy collector)
+    "parsers-influencers.yml": [7, 19],              # 2×/day
+}
+DISPATCH_PAT = os.environ.get("DISPATCH_PAT", "")
+REPO = os.environ.get("GITHUB_REPOSITORY", "marketing1utdteam-spec/utd-parsers")
 
 SERGEY = {"user_env": {}, "pw": ""}  # placeholders for readability
 
@@ -120,6 +135,37 @@ def run_script(script, extra_env, label):
     return sent, r.returncode
 
 
+def trigger_parsers(st):
+    """Fire each parser workflow at its scheduled UTC slots (once per slot/day),
+    since GitHub's own cron is throttled. Uses DISPATCH_PAT. A slot only fires
+    within a 2-hour catch-up window so a downtime never causes a burst."""
+    import urllib.request
+    if not DISPATCH_PAT:
+        print("· parser triggers skipped (no DISPATCH_PAT)")
+        return
+    for wf, hours in PARSER_SLOTS.items():
+        key = "parser:" + wf
+        rec = st.get(key, {})
+        if rec.get("date") != TODAY:
+            rec = {"date": TODAY, "fired": []}
+        due = [h for h in hours if 0 <= (UTC_HOUR - h) <= 1 and h not in rec["fired"]]
+        for h in due:
+            try:
+                req = urllib.request.Request(
+                    f"https://api.github.com/repos/{REPO}/actions/workflows/{wf}/dispatches",
+                    data=json.dumps({"ref": "main"}).encode(),
+                    headers={"Authorization": f"token {DISPATCH_PAT}",
+                             "Accept": "application/vnd.github+json",
+                             "User-Agent": "utd-dispatcher"},
+                    method="POST")
+                urllib.request.urlopen(req, timeout=30)
+                rec["fired"].append(h)
+                print(f"· triggered {wf} (UTC slot {h}:00)")
+            except Exception as e:
+                print(f"· parser trigger {wf} failed: {e}")
+        st[key] = rec
+
+
 def main():
     st = load_state()
     print(f"=== dispatcher | {NOW.isoformat()} | weekday={WEEKDAY} hour={HOUR}Z ===")
@@ -151,6 +197,9 @@ def main():
         rec["date"] = TODAY
         st[t["task"]] = rec
         print(f"· {t['task']}: sent={sent} today={rec['sent_today']}/{t['cap']} rc={rc}")
+
+    # Fire the parsers on their own reliable schedule (cloud, no throttling).
+    trigger_parsers(st)
 
     in_business = (WEEKDAY < 5) and (BE_WORK[0] <= HOUR <= BE_WORK[1])
     for t in ALWAYS:

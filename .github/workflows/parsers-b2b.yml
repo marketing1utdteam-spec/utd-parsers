@@ -1,13 +1,11 @@
 name: B2B Parser — Daily
 
 on:
-  schedule:                    # 5 прогонов/день, разнесены по суткам (парсер собирает 24/7)
-    - cron: '17 2 * * *'
-    - cron: '17 6 * * *'
-    - cron: '17 10 * * *'
-    - cron: '17 14 * * *'
-    - cron: '17 18 * * *'
-  workflow_dispatch: {}        # manual "Run workflow" button
+  # 5 прогонов/день теперь запускает ДИСПЕТЧЕР (PARSER_SLOTS), т.к. GitHub-cron
+  # троттлит расписание до ~2/день. Оставлен один безопасный cron как страховка.
+  schedule:
+    - cron: '17 1 * * *'       # safety-net; основной драйвер — outreach-dispatcher
+  workflow_dispatch: {}        # manual + dispatcher trigger
 
 permissions:
   contents: write              # allow committing the dedup state back
@@ -40,9 +38,9 @@ jobs:
           # Общий пул ~7 рабочих CSE-ключей (~700/день). Без KEY_SLICE — мёртвые
           # ключи парсер сам отбрасывает. Бюджет ужат, чтобы 2 прогона всех
           # парсеров влезли в ~700/день (см. коммент в parsers-ecom.yml).
-          KEY_SLICE: '0:4'              # 4 выделенных рабочих ключа (b2b — приоритет; +2 забрали у инфл)
-          MAX_GOOGLE_QUERIES: '60'      # 60 запросов/прогон
-          SEARCH_PAGES: '3'             # 3 страницы выдачи Google на запрос (глубже — больше доменов; было 2)
+          KEY_SLICE: '0:3'              # 3 выделенных рабочих ключа (300 CSE/день)
+          MAX_GOOGLE_QUERIES: '30'      # 30 запросов × 2 стр × 5 прогонов = 300 вызовов/день = квота 3 ключей
+          SEARCH_PAGES: '2'             # 5 прогонов в РАЗНОЕ время = свежая выдача, больше уникальных доменов
           NOTIFY_URL: 'https://utdteam.app.n8n.cloud/webhook/utd-parser-notify'
           B2B_SHEET_ID: ${{ vars.B2B_SHEET_ID }}
         run: python run.py b2b

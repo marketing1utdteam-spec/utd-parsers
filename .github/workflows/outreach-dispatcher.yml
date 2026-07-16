@@ -35,6 +35,7 @@ jobs:
           GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           PAGESPEED_API_KEY: ${{ secrets.PAGESPEED_API_KEY }}
+          DISPATCH_PAT: ${{ secrets.DISPATCH_PAT }}   # lets the dispatcher trigger the parser workflows on a reliable schedule
           GOOGLE_API_KEYS: ${{ secrets.GOOGLE_API_KEYS }}   # ecom PageSpeed fallback key
           INBOX_FETCH_LIMIT: ${{ vars.INBOX_FETCH_LIMIT }}  # how many inbox msgs autoresponders scan (empty→400); raise for a deep backlog sweep
           GMAIL_APP_PW_SERGEY: ${{ secrets.GMAIL_APP_PW_SERGEY }}

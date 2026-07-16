@@ -2,8 +2,7 @@ name: Influencer Parser — Daily
 
 on:
   schedule:
-    - cron: '29 5 * * *'       # ~morning run  (UTC; GitHub may delay a few hours)
-    - cron: '51 17 * * *'      # ~evening run  → twice a day
+    - cron: '29 5 * * *'       # safety-net; main driver 2×/day — outreach-dispatcher (PARSER_SLOTS)
   workflow_dispatch: {}        # manual "Run workflow" button
 
 permissions:

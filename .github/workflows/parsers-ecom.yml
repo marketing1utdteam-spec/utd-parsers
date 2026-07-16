@@ -4,8 +4,7 @@ on:
   # Запущен 2026-07-06 по команде владельца.
   #    Предлагаемые слоты (UTC, «кривые» минуты, чтобы не толкаться с b2b/influencers):
   schedule:
-    - cron: '33 4 * * *'      # ~утренний прогон
-    - cron: '9 15 * * *'      # ~дневной прогон (2 раза в день)
+    - cron: '33 3 * * *'      # safety-net; основной драйвер 2×/день — outreach-dispatcher (PARSER_SLOTS)
   workflow_dispatch: {}          # manual "Run workflow" button only
 
 permissions:
@@ -45,8 +44,8 @@ jobs:
           # Без KEY_SLICE — общий пул; мёртвые ключи парсер сам отбрасывает.
           # Бюджеты подобраны так, чтобы 2 прогона всех парсеров влезли в ~700/день:
           # ecom 80×2стр×2прог=320 + b2b 240 + infl ~100 ≈ 660 ≤ 700.
-          KEY_SLICE: '4:6'              # 2 выделенных рабочих ключа
-          MAX_GOOGLE_QUERIES: '80'      # топ-парсер по выходу — берёт больше пула
+          KEY_SLICE: '3:6'              # 3 выделенных рабочих ключа (300 CSE/день) — топ-парсер по выходу
+          MAX_GOOGLE_QUERIES: '70'      # 70 × 2 стр × 2 прогона = 280 ≤ 300 слота
           SEARCH_PAGES: '2'             # брать 2 страницы выдачи на запрос
           NOTIFY_URL: 'https://utdteam.app.n8n.cloud/webhook/utd-parser-notify'
         run: python run.py ecom
