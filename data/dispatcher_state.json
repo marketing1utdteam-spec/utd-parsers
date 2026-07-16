@@ -11,22 +11,22 @@
  },
  "ecom_serge": {
   "date": "2026-07-16",
-  "last_sent_iso": "2026-07-16T15:05:12.329636+02:00",
-  "sent_today": 10
+  "last_sent_iso": "2026-07-16T15:36:12.855480+02:00",
+  "sent_today": 11
  },
  "ecom_sergey": {
   "date": "2026-07-16",
-  "last_sent_iso": "2026-07-16T15:05:12.329636+02:00",
-  "sent_today": 10
+  "last_sent_iso": "2026-07-16T15:36:12.855480+02:00",
+  "sent_today": 11
  },
  "infl_serge": {
   "date": "2026-07-16",
-  "last_sent_iso": "2026-07-16T14:11:01.220061+02:00",
-  "sent_today": 4
+  "last_sent_iso": "2026-07-16T15:36:12.855480+02:00",
+  "sent_today": 5
  },
  "infl_sergey": {
   "date": "2026-07-16",
-  "last_sent_iso": "2026-07-16T14:11:01.220061+02:00",
-  "sent_today": 4
+  "last_sent_iso": "2026-07-16T15:36:12.855480+02:00",
+  "sent_today": 5
  }
 }
