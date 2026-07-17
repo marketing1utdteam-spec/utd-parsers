@@ -21,13 +21,13 @@
  },
  "infl_serge": {
   "date": "2026-07-17",
-  "last_sent_iso": "2026-07-17T09:09:23.964504+02:00",
-  "sent_today": 1
+  "last_sent_iso": "2026-07-17T10:43:23.168910+02:00",
+  "sent_today": 2
  },
  "infl_sergey": {
   "date": "2026-07-17",
-  "last_sent_iso": "2026-07-17T09:09:23.964504+02:00",
-  "sent_today": 1
+  "last_sent_iso": "2026-07-17T10:43:23.168910+02:00",
+  "sent_today": 2
  },
  "parser:parsers-b2b.yml": {
   "date": "2026-07-17",
