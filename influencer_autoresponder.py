@@ -677,9 +677,24 @@ def process_message(account, msg, by_thread, by_email, pricing_by_email, state, 
                                  max_tokens=1400)
         decision = parse_ai_result(ai_text, collected)
         if decision is None:
+            # Empty/unparseable answer. Cap retries so a message that fails every
+            # cycle can't loop forever burning paid Claude calls: give up after 3
+            # runs, mark processed, and record it in Notable for a manual look.
+            reason = "empty AI response" if not (ai_text or "").strip() else "unparseable AI result"
             print(f"\n· {account['user']} ← {msg['from_email']} | {msg['subject'][:60]!r}")
-            print("  [claude unavailable -> fallback/skip]")
-            print("  UNDECIDED (empty AI response) → left for next run, not marked processed.")
+            if ec.bump_attempt(state, mid, limit=3):
+                ec.mark_processed(state, mid)
+                print(f"  GAVE UP after 3 tries ({reason}) → marked processed to stop the retry loop.")
+                try:
+                    ec.append_notable(NOTABLE_SHEET_ID, NOTABLE_TAB, {
+                        "Date": (msg.get("date", "") or "")[:16], "Chain": "Influencer",
+                        "Account": account.get("user", ""), "From": msg.get("from_email", ""),
+                        "Subject": msg.get("subject", ""),
+                        "Why notable": f"Claude {reason} 3x — auto-skipped, needs manual look"})
+                except Exception:
+                    pass
+            else:
+                print(f"  UNDECIDED ({reason}) → retry next run, not marked processed.")
             return
 
     route = decision["category"]

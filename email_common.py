@@ -841,11 +841,21 @@ def call_claude(system, user, model=DEFAULT_MODEL, max_tokens=1500,
                               data=json.dumps(payload), timeout=timeout)
             if r.status_code == 200:
                 data = r.json()
+                u = data.get("usage", {}) or {}
+                CLAUDE_CALLS["in"] = CLAUDE_CALLS.get("in", 0) + int(u.get("input_tokens", 0) or 0)
+                CLAUDE_CALLS["out"] = CLAUDE_CALLS.get("out", 0) + int(u.get("output_tokens", 0) or 0)
+                print(f"  [CLAUDE usage] in={u.get('input_tokens', 0)} out={u.get('output_tokens', 0)} "
+                      f"cache_read={u.get('cache_read_input_tokens', 0)} "
+                      f"stop={data.get('stop_reason')}")
                 parts = data.get("content", [])
                 text = "".join(p.get("text", "") for p in parts
                                if p.get("type") == "text").strip()
                 if text:
                     return text
+                # 200 but no text (e.g. stop_reason 'refusal' / all-thinking):
+                # log it so a permanently-empty message is visible, then fall through.
+                print(f"  [CLAUDE empty-200] stop={data.get('stop_reason')} content_types="
+                      f"{[p.get('type') for p in parts]}")
             if attempt < retries:
                 if r.status_code in (429, 529):
                     # Rate limited / overloaded: honour Retry-After, else long backoff.
@@ -972,3 +982,23 @@ def mark_processed(state, message_id):
     # keep the file bounded (last ~5000 ids is plenty for a 3-day window)
     if len(ids) > 5000:
         state["processed_ids"] = ids[-5000:]
+
+
+def bump_attempt(state, message_id, limit=3):
+    """Count how many runs have failed to get a usable Claude answer for this
+    message (empty response / unparseable). Returns True once the count reaches
+    `limit` — the caller should then GIVE UP (mark it processed) instead of
+    re-calling Claude on it every single cycle forever.
+
+    This stops the 'empty AI response -> retry next run' branch from turning a
+    handful of bad messages into hundreds of paid Claude calls per day.
+    """
+    if not message_id:
+        return False
+    h = hash_id(message_id)
+    att = state.setdefault("attempts", {})
+    att[h] = int(att.get(h, 0)) + 1
+    if len(att) > 5000:  # bound the dict
+        for k in list(att)[:len(att) - 5000]:
+            att.pop(k, None)
+    return att[h] >= limit

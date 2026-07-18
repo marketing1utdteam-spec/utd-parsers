@@ -507,17 +507,27 @@ def process_message(account, msg, by_email, by_thread, state, stats):
         # Gentle pacing between Claude calls to avoid 429 on big batches.
         time.sleep(0.7)
         ai_text = ec.call_claude(SYSTEM_PROMPT, user, model=MODEL, max_tokens=MAX_TOKENS)
-        if not (ai_text or "").strip():
-            # Transient API failure / no key: leave the email for the next run
-            # (NOT marked processed) instead of mis-escalating it.
-            print(f"\n· {account['user']} ← {msg['from_email']} | {msg['subject'][:60]!r}")
-            print("  [claude unavailable -> fallback/skip]")
-            return
-        decision = parse_ai_result(ai_text)
+        decision = parse_ai_result(ai_text) if (ai_text or "").strip() else None
         if decision is None:
-            # Unparseable/ambiguous — leave for the next run (never hand to a human).
+            # Empty or unparseable AI answer. Normally we leave it for the next
+            # run — but a message that fails EVERY cycle would be re-sent to
+            # Claude forever (hundreds of paid calls/day). Cap it: after 3 runs
+            # give up, mark processed, and log it to Notable for a manual look.
+            reason = "empty AI response" if not (ai_text or "").strip() else "unparseable AI result"
             print(f"\n· {account['user']} ← {msg['from_email']} | {msg['subject'][:60]!r}")
-            print("  UNDECIDED → left for next run, not marked processed.")
+            if ec.bump_attempt(state, mid, limit=3):
+                ec.mark_processed(state, mid)
+                print(f"  GAVE UP after 3 tries ({reason}) → marked processed to stop the retry loop.")
+                try:
+                    ec.append_notable(NOTABLE_SHEET_ID, NOTABLE_TAB, {
+                        "Date": (msg.get("date", "") or "")[:16], "Chain": "Ecom",
+                        "Account": account.get("user", ""), "From": msg.get("from_email", ""),
+                        "Subject": msg.get("subject", ""),
+                        "Why notable": f"Claude {reason} 3x — auto-skipped, needs manual look"})
+                except Exception:
+                    pass
+            else:
+                print(f"  UNDECIDED ({reason}) → retry next run, not marked processed.")
             return
 
     # «Маршрут» switch: a category not in ROUTE_OUTPUTS falls to the ignore output.
