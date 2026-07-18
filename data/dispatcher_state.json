@@ -33,7 +33,8 @@
   "date": "2026-07-18",
   "fired": [
    1,
-   6
+   6,
+   10
   ]
  },
  "parser:parsers-ecom.yml": {
