@@ -41,7 +41,8 @@
  "parser:parsers-ecom.yml": {
   "date": "2026-07-19",
   "fired": [
-   3
+   3,
+   15
   ]
  },
  "parser:parsers-influencers.yml": {
