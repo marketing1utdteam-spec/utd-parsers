@@ -44,6 +44,8 @@
  },
  "parser:parsers-influencers.yml": {
   "date": "2026-07-19",
-  "fired": []
+  "fired": [
+   7
+  ]
  }
 }
