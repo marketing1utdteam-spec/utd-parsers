@@ -426,6 +426,126 @@ def parse_and_clean(text, company_name):
     return {"email_subject": subject, "email_body": body + SIG}
 
 
+# ═══════════════════════════════════════════════════════════════════
+#   TEMPLATE MODE (cost): Claude writes ONLY the subject + one personalised
+#   opening paragraph; paragraphs about UTD / the offer / the savings / the ask
+#   are a fixed, pre-approved body. Cuts output tokens ~4x per cold send.
+#   English sites only; other languages fall back to full localised generation.
+# ═══════════════════════════════════════════════════════════════════
+
+OPENER_SYSTEM = (
+    'You are Sergey, a partnership manager at UTD Web (utdweb.team), a Shopify theme studio. '
+    'You are writing a cold email to a web or ecommerce agency to invite them to the UTD referral program. '
+    'Write ONLY two things: a subject line, and ONE opening paragraph about THEM.\n'
+    'VOICE (most important): write like a real person, not AI or ad copy. Real people write LONGER, flowing, '
+    'simple sentences that go straight to the point and join ideas with "and", "so", "because". Keep the words '
+    'and grammar simple (the reader may not be a native English speaker), but connect thoughts into longer '
+    'sentences, never short choppy fragments.\n'
+    'THE OPENING PARAGRAPH: open with one longer simple sentence that says what their company actually does AND '
+    'one real specific thing from their website (a project, a service, a niche, a client) AND, in the same '
+    'breath, why that made you write to them (why their work fits a Shopify theme referral program). Never a '
+    'vague opener like "I visited your site and saw...". Nothing about UTD here, only about them. If the website '
+    'content could not be loaded, write the observation from the company name and what kind of agency they are, '
+    'and NEVER mention errors, 403s, or that you could not open the site.\n'
+    'HARD RULES: never use an em dash (use a comma or a period). Forbidden words: exclusive, exciting, '
+    'game-changer, handpicked, curated, unique opportunity, seamless, revolutionary. No hype.\n'
+    'SUBJECT: unique to THIS agency, tied to their niche or your observation, natural like a real work email '
+    'subject, never generic, never clickbait.\n'
+    'Reply in EXACTLY this format and nothing else:\n'
+    'SUBJECT: ...\n'
+    'OPENER: ...'
+)
+
+# Fixed body, 2 variants (same facts, different wording) for deliverability;
+# picked by a stable hash of the company so an agency always gets the same one.
+_B2B_BODY_VARIANTS = [
+    (
+        "UTD Web builds Shopify themes, and we have 6 themes with 30 ready-made designs live on Shopify's "
+        "official Theme Store (https://themes.shopify.com/themes?q=UTD), which means Shopify reviews every one "
+        "before it goes live and thousands of merchants already run their stores on them, and conversion "
+        "features like upsells, cross-sells and promo blocks are built right into the themes so the stores you "
+        "build need fewer paid apps. Our site is https://utdweb.team.\n\n"
+        "We are inviting agencies like yours to our referral program, and it works simply: your client buys the "
+        "theme themselves through the official Shopify Theme Store, you keep the client and the project, we set "
+        "up their store and give them the best support they can get for free, and you earn a commission on that "
+        "sale. The commission grows as you sell more and the exact numbers are in the program memo, and our "
+        "flagship theme Impression costs $340, so it adds up on top of your normal project fees.\n\n"
+        "Building a theme from scratch takes one developer roughly 100+ hours and with a ready theme it is a "
+        "couple of days, so you save around 80 to 100 hours of one specialist on every project, and since a "
+        "developer who sets up Shopify themes usually costs $40 to $60 per hour in the US that is roughly $3,200 "
+        "to $6,000 saved on every single project. On top of that we help install and set up the theme, we help "
+        "build the client sites on it, we explain how everything inside works, and we answer your developer's "
+        "questions fast and fix problems ourselves, so your team never sits reading documentation or debugging.\n\n"
+        "Reply and I'll send you the program memo with all the details."
+    ),
+    (
+        "A bit about us: UTD Web makes Shopify themes, and our 6 themes with 30 ready-made designs are published "
+        "on Shopify's official Theme Store (https://themes.shopify.com/themes?q=UTD), so Shopify itself reviews "
+        "every theme before it is listed and thousands of merchants already run on them, and because upsells, "
+        "cross-sells and promo blocks are built into the themes the stores you build rely on fewer paid apps. "
+        "You can see everything at https://utdweb.team.\n\n"
+        "We are opening our referral program to agencies like yours, and the way it works is simple and keeps the "
+        "client yours: your client buys the theme themselves on the official Shopify Theme Store, you keep the "
+        "relationship and the project, we handle their store setup and give them top support for free, and you "
+        "earn a commission on the sale. The commission grows the more you sell and the exact figures come in the "
+        "program memo, and with our flagship theme Impression at $340 it adds up on top of your usual project fees.\n\n"
+        "The time it saves is real: a theme from scratch is roughly 100+ hours for one developer, while a ready "
+        "theme takes a couple of days, so that is about 80 to 100 hours of one specialist saved per project, and "
+        "at the $40 to $60 per hour a US Shopify developer usually costs that works out to roughly $3,200 to "
+        "$6,000 saved on every project. We also install and set up the theme, help build the client sites on it, "
+        "explain how the theme and its sections work, and answer your developer's questions quickly and fix "
+        "issues ourselves, so your team is not stuck reading docs or debugging.\n\n"
+        "Reply and I'll send over the program memo with the full details."
+    ),
+]
+
+_EN_STOP = re.compile(r"\b(the|and|our|you|your|we|for|with|that|this|are|is|of|to)\b", re.I)
+
+
+def _looks_english(text):
+    """Cheap heuristic: enough common English words in the scraped site text.
+    Empty/unknown defaults to True (use the English template)."""
+    if not text or not text.strip():
+        return True
+    return len(_EN_STOP.findall(text[:2500])) >= 4
+
+
+def _variant_index(company, n):
+    return sum(ord(c) for c in (company or "x")) % n
+
+
+def build_opener_request(contact, site_text):
+    """(system, user) for the lean 'subject + one opener paragraph' call."""
+    user = (
+        "Company: " + contact["company_name"] +
+        "\nWebsite: " + contact["website"] +
+        "\nWebsite content (scraped, may be partial):\n" + site_text +
+        "\n\nWrite the subject and the single opening paragraph now, in your natural human voice. "
+        "Ground the paragraph in ONE concrete thing from the website content above.\n"
+        "Reply ONLY as:\nSUBJECT: ...\nOPENER: ..."
+    )
+    return OPENER_SYSTEM, user
+
+
+def assemble_template_email(ai_text, contact):
+    """Build the full letter from Claude's SUBJECT+OPENER plus a fixed body.
+    Returns {email_subject, email_body} or None if the opener can't be parsed."""
+    if not ai_text or not ai_text.strip():
+        return None
+    subm = re.search(r"SUBJECT:\s*(.+?)(?:\n|$)", ai_text, re.I)
+    opm = re.search(r"OPENER:\s*([\s\S]+)", ai_text, re.I)
+    if not opm or not opm.group(1).strip():
+        return None
+    company = contact["company_name"]
+    subject = strip_em_dashes(subm.group(1).strip() if subm else _fallback_subject(company))
+    opener = strip_em_dashes(strip_trailing_signoff(opm.group(1).strip()))
+    if len(opener) < 40:  # too short to be a real opener → let caller fall back
+        return None
+    variant = _B2B_BODY_VARIANTS[_variant_index(company, len(_B2B_BODY_VARIANTS))]
+    body = "Hi " + (company or "there") + " team,\n\n" + opener + "\n\n" + variant
+    return {"email_subject": subject, "email_body": body + SIG}
+
+
 def build_email_template(contact):
     """Alternate plain «Build Email (template)» node (kept for parity; not in the
     default AI path). Returns {email_subject, email_body}."""
@@ -542,14 +662,27 @@ def run_once():
               f"({contact['company_name']}) | {contact['website']}")
 
         html = fetch_company_website(contact["website"])
-        system, user_prompt = build_claude_request(contact, html)
-        if DRY_RUN:
-            # Review aid: dump the exact prompts before the (possibly key-less) call.
-            print_prompt_for_review("b2b send", system, user_prompt)
-        ai_text = ec.call_claude(system, user_prompt, model=MODEL, max_tokens=MAX_TOKENS)
-        if not ai_text:
-            print("[claude unavailable -> fallback used]")
-        drafted = parse_and_clean(ai_text, contact["company_name"])
+        site_text = _clean_site_text(html)
+        drafted = None
+        # Template mode (cost): English sites → Claude writes only subject + one
+        # opening paragraph (~4x less output), the rest is a fixed body.
+        if _looks_english(site_text):
+            osys, ouser = build_opener_request(contact, site_text)
+            if DRY_RUN:
+                print_prompt_for_review("b2b opener (template)", osys, ouser)
+            otext = ec.call_claude(osys, ouser, model=MODEL, max_tokens=300)
+            drafted = assemble_template_email(otext, contact)
+            if drafted:
+                print("  [template mode: subject + 1 personalised paragraph]")
+        if drafted is None:
+            # Non-English site, or opener unparsable → full localised generation.
+            system, user_prompt = build_claude_request(contact, html)
+            if DRY_RUN:
+                print_prompt_for_review("b2b send (full)", system, user_prompt)
+            ai_text = ec.call_claude(system, user_prompt, model=MODEL, max_tokens=MAX_TOKENS)
+            if not ai_text:
+                print("[claude unavailable -> fallback used]")
+            drafted = parse_and_clean(ai_text, contact["company_name"])
 
         try:
             send_and_mark(ws, header, contact, drafted, state, stats)
