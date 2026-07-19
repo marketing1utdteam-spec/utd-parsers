@@ -751,7 +751,7 @@ def process_message(account, msg, by_email, by_token, state, stats):
             history = _THREAD_CACHE[cache_key]
         else:
             try:
-                thread = ec.fetch_thread(account, thrid, OWN_ADDRESSES)
+                thread = ec.fetch_thread(account, thrid, OWN_ADDRESSES, max_msgs=8)  # cap input: last 8 msgs is plenty for a reply
                 history = format_thread_history(thread)
                 if thrid:
                     _THREAD_CACHE[cache_key] = history

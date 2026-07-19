@@ -249,7 +249,7 @@ def get_thread_history(account, msg):
     history = ""
     try:
         history = format_thread_history(
-            ec.fetch_thread(account, thrid, OWN_ADDRESSES))
+            ec.fetch_thread(account, thrid, OWN_ADDRESSES, max_msgs=8))  # cap input: last 8 msgs is plenty for a reply
     except Exception as e:
         print(f"  (thread fetch failed, using single message: {e})")
     _THREAD_CACHE[cache_key] = history

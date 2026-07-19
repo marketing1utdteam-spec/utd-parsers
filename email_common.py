@@ -355,7 +355,7 @@ def fetch_thread(account, gm_thrid, own_addresses=(), all_mail="[Gmail]/All Mail
         typ, data = M.uid("SEARCH", None, "X-GM-THRID", str(gm_thrid))
         if typ != "OK" or not data or not data[0]:
             return []
-        uids = data[0].split()[:max_msgs]
+        uids = data[0].split()[-max_msgs:]  # most-recent max_msgs (search returns oldest-first); recent msgs matter for a reply
         for uid in uids:
             typ, md = M.uid("FETCH", uid, "(BODY.PEEK[])")
             if typ != "OK" or not md or not md[0]:
