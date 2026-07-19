@@ -697,6 +697,116 @@ def build_thread_context(c):
 #   BUILD CLAUDE REQUEST  (per-touch prompts; 2-4 carry the prior thread)
 # ═══════════════════════════════════════════════════════════════════
 
+# ── TEMPLATE MODE (cost, touch-1 only): Claude writes only the PERSONALISED
+#    parts — the chosen preset, the subject, the insight paragraph, and one
+#    feature clause tied to their store. The bridge / value line / closing are
+#    assembled from the registry in code. Output tokens drop ~2.5x while the
+#    two things that carry quality (the insight and the theme+feature pitch)
+#    stay fully personalised. The assembled letter is passed through the normal
+#    parse_email() + validate_body() guard, so a bad assembly safely falls back.
+
+ECOM_OPENER_SYSTEM = (
+    "You are Sergey, a normal guy at UTD Web, an IT company that builds themes for the official "
+    "Shopify Theme Store. You are writing to the owner of a real Shopify store to sell ONE theme. "
+    "Write these four fields, nothing else:\n"
+    "PRESET: the ONE preset from the registry whose main industry matches the store's REAL industry "
+    "(decide the real industry from the site content; the CRM hint can be wrong). If several share it, "
+    "take the one listed FIRST.\n"
+    "SUBJECT: natural, properly capitalised, naming their niche; never clickbait.\n"
+    "INSIGHT: ONE opening paragraph, one or two LONG simple flowing sentences (never short choppy "
+    "ones). Open straight with what you actually saw on their store (it runs on Shopify, plus their "
+    "products/range/how it is set up) AND why that matters for their sales, landing on a real insight "
+    "about what is likely costing them orders or the opportunity in their catalog, grounded in what "
+    "you saw with NO invented numbers. If REAL PageSpeed numbers are given below, state them plainly "
+    "as something we measured. Do not mention UTD here.\n"
+    "PITCH: one or two STANDALONE sentences tying the chosen preset's features to THEIR store, with "
+    "one short concrete proof clause. Start with the feature or benefit itself, NOT with 'For a store "
+    "like yours' or 'For a catalog like yours' (that lead-in is added before your text). Name ONLY the "
+    "chosen preset, no other theme or preset, and no links.\n"
+    "VOICE: write like a real person, simple words, longer flowing sentences. Never an em dash. No "
+    "hype words (exclusive, exciting, game-changer, seamless, revolutionary). Never suggest a call.\n"
+    "Output EXACTLY:\nPRESET: ...\nSUBJECT: ...\nINSIGHT: ...\nPITCH: ..."
+)
+
+
+def build_ecom_opener(c, site_text):
+    """(system, user) for the lean touch-1 'preset+subject+insight+pitch' call."""
+    store = c["store_name"] or c["website"]
+    speed = ""
+    if c.get("psi_score") is not None:
+        speed = ("\nREAL PageSpeed numbers we measured (state them): mobile performance "
+                 + str(c["psi_score"]) + " of 100"
+                 + (", largest content loads in " + str(c["psi_lcp"]) + "s" if c.get("psi_lcp") else "") + ".")
+    user = ("Store: " + store + "\nWebsite: " + c["website"] +
+            "\nCRM industry (hint only, may be wrong): " + c["industry"] +
+            "\n\nPRESET REGISTRY (pick ONE whose main industry = the store's REAL industry):\n"
+            + registry_table() + speed +
+            "\n\nSite content:\n" + (site_text or "(unavailable)") +
+            "\n\nWrite the four fields now.")
+    return ECOM_OPENER_SYSTEM, user
+
+
+def assemble_ecom_touch1(c, ai_text):
+    """Turn Claude's PRESET/SUBJECT/INSIGHT/PITCH into a full touch-1 letter in
+    the PRESET/SUBJECT/BODY shape parse_email() expects. Returns that synthetic
+    string, or None if the personalised parts are missing (caller falls back to
+    full generation)."""
+    if not ai_text or not ai_text.strip():
+        return None
+    pm = re.search(r"PRESET:\s*([A-Za-z]+)", ai_text)
+    sm = re.search(r"SUBJECT:\s*(.+?)(?:\n|$)", ai_text, re.I)
+    im = re.search(r"INSIGHT:\s*([\s\S]+?)(?:\nPITCH:|\Z)", ai_text, re.I)
+    ptm = re.search(r"PITCH:\s*([\s\S]+)", ai_text, re.I)
+    if not (pm and pm.group(1) in PRESETS and sm and im and ptm):
+        return None
+    preset = pm.group(1)
+    subject = sm.group(1).strip()
+    insight = " ".join(im.group(1).split()).strip()
+    pitch = " ".join(ptm.group(1).split()).strip()
+    if len(insight) < 40 or len(pitch) < 20:
+        return None
+
+    order = MAP.get(c["industry"]) or ["Impression", "Ultra", "Allure", "Gain", "Victory"]
+    chosen_theme = PRESETS[preset]["theme"]
+    others = [n for n in order if n != chosen_theme][:3]
+    store = c["store_name"] or "there"
+    others_txt = ", ".join(_tref(n) for n in others)
+    pref = preset_ref(preset)
+
+    # Two variants of the FIXED wording (same facts/links) for deliverability;
+    # picked by a stable hash so a given store always gets the same one.
+    variant = sum(ord(ch) for ch in (c.get("email") or store)) % 2
+    if variant == 0:
+        body = (
+            "Hi " + store + " team,\n\n"
+            + insight + "\n\n"
+            "That is exactly why I am writing to you. I am Sergey from UTD Web, our themes are on "
+            "Shopify's official Theme Store (" + REGISTRY + "), Shopify reviews every theme before it "
+            "is listed and thousands of stores already run on them.\n\n"
+            "For a store like yours I would start with " + pref + ". " + pitch + "\n\n"
+            "Upsells, cross-sells and promo blocks are built right into the theme, which usually replaces "
+            "$15 to $50 a month of separate apps, so it pays for itself.\n\n"
+            "A few other themes worth a look are " + others_txt + ". There is no pressure either way, you "
+            "can reply and we will talk it through, or you can pick a theme yourself on the official Theme "
+            "Store, and we are happy to advise if you have any questions about which one fits your store."
+        )
+    else:
+        body = (
+            "Hi " + store + " team,\n\n"
+            + insight + "\n\n"
+            "That is why I am reaching out. I am Sergey from UTD Web, and our themes live on Shopify's "
+            "official Theme Store (" + REGISTRY + "), so Shopify checks every one before it is listed and "
+            "thousands of merchants already run their stores on them.\n\n"
+            "For a store like yours the theme I would point you to first is " + pref + ". " + pitch + "\n\n"
+            "The theme has upsells, cross-sells and promo blocks built in, so it usually takes the place of "
+            "$15 to $50 a month in separate apps and pays for itself.\n\n"
+            "Other themes you might want to look at are " + others_txt + ". No pressure at all, you can "
+            "reply and we will go through it together, or just pick a theme yourself on the official Theme "
+            "Store, and we are glad to help if you are unsure which one suits your store best."
+        )
+    return "PRESET: " + preset + "\nSUBJECT: " + subject + "\nBODY:\n" + body
+
+
 def build_request(c, site_text, history=""):
     """Return (system, user, primary, alt) for the contact's touch. Touches
     2-4 embed `history` (the actual prior emails, or the structured summary)
@@ -1186,13 +1296,31 @@ def run_once():
         # Touches 2-4: pull the ACTUAL prior correspondence (or a structured
         # summary) so the letter builds on what was already said.
         history = build_thread_context(c) if c["touch"] > 1 else ""
-        sys, user, primary, alt = build_request(c, site_text, history)
-        if DRY_RUN:
-            _print_prompt(sys, user)
-        ai_text = ec.call_claude(sys, user, model=MODEL, max_tokens=MAX_TOKENS)
-        if not ai_text:
-            print("[claude unavailable -> fallback/skip]")
-        payload = parse_email(c, ai_text, primary, alt)
+        payload, primary = None, None
+        if c["touch"] == 1:
+            # Template mode (cost): Claude writes only the personalised parts
+            # (preset + subject + insight + pitch, ~2.7x less output); the
+            # bridge / value / closing are assembled from the registry and the
+            # whole letter is validated by parse_email()'s guard.
+            osys, ouser = build_ecom_opener(c, site_text)
+            if DRY_RUN:
+                _print_prompt(osys, ouser)
+            otext = ec.call_claude(osys, ouser, model=MODEL, max_tokens=320)
+            synth = assemble_ecom_touch1(c, otext)
+            if synth:
+                order = MAP.get(c["industry"]) or ["Impression", "Ultra", "Allure", "Gain", "Victory"]
+                primary, alt = order[:3], order[3:5]
+                payload = parse_email(c, synth, primary, alt)
+                print("  [template mode: insight + pitch personalised, rest fixed]")
+        if payload is None:
+            # touch 2-4, or template opener unparsable → full localised generation.
+            sys, user, primary, alt = build_request(c, site_text, history)
+            if DRY_RUN:
+                _print_prompt(sys, user)
+            ai_text = ec.call_claude(sys, user, model=MODEL, max_tokens=MAX_TOKENS)
+            if not ai_text:
+                print("[claude unavailable -> fallback/skip]")
+            payload = parse_email(c, ai_text, primary, alt)
 
         print(f"\n· touch {payload['touch']} → {payload['email']} | "
               f"{c['store_name'] or c['website']} [{c['industry']}] "
