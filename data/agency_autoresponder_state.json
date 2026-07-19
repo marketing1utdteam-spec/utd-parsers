@@ -1022,14 +1022,15 @@
 "1e1bcf89b2c044342efaf622a5cedac8b8fd59cb6d302955f48cf272d8b31bc3",
 "ff54b4f9c0d6bf4d97183da5e35e738de5badd74d3d6d91adfaad7d7bde9def6"
 ],
-"updated": "2026-07-19T09:39:25.768013+00:00",
+"updated": "2026-07-19T10:15:20.590634+00:00",
 "contacts": {
 "4aac37bcd1794bc6d3361ccbf63110dc82fc3c67f75c8bf42ae401ba0342ca8c": {
-"last_sent": "2026-07-16T09:59:29.285738+00:00",
+"last_sent": "2026-07-19T10:15:20.335066+00:00",
 "stage": "Qualifying",
 "account": "sergey.utd@gmail.com",
 "reminders": {
-"Agreement Sent": 2
+"Agreement Sent": 2,
+"Qualifying": 1
 }
 },
 "331b282da7941ebea4f5c9d9d9a384647a73189141d52e6760e784340c52b20d": {
@@ -1059,14 +1060,20 @@
 "account": "sergey.utd@gmail.com"
 },
 "f9e7128f53d53446fe439d09bd0276397c9b861b91b3720e25765a1cd3aefd4f": {
-"last_sent": "2026-07-16T10:02:18.310136+00:00",
+"last_sent": "2026-07-19T10:15:18.210308+00:00",
 "stage": "Qualifying",
-"account": "sergey.utd@gmail.com"
+"account": "sergey.utd@gmail.com",
+"reminders": {
+"Qualifying": 1
+}
 },
 "ad73f7a70b2dcab36b593d609422ab164f719df776a86515c7079fd256d9f74e": {
-"last_sent": "2026-07-16T10:04:33.894431+00:00",
+"last_sent": "2026-07-19T10:15:19.263311+00:00",
 "stage": "Qualifying",
-"account": "serge.utd@gmail.com"
+"account": "serge.utd@gmail.com",
+"reminders": {
+"Qualifying": 1
+}
 }
 }
 }
