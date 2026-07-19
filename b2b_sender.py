@@ -200,7 +200,7 @@ def _clean_site_text(html):
             t = re.sub(r"<footer[\s\S]*?</footer>", "", t, flags=re.I)
             t = re.sub(r"<[^>]+>", " ", t)
             t = re.sub(r"&nbsp;|&amp;|&quot;", " ", t)
-            t = re.sub(r"\s+", " ", t).strip()[:2500]
+            t = re.sub(r"\s+", " ", t).strip()[:1800]  # top of page carries the usable observation; cap input
             site_text = t
     except Exception:
         pass

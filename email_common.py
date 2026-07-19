@@ -852,10 +852,13 @@ def call_claude(system, user, model=DEFAULT_MODEL, max_tokens=1500,
                                if p.get("type") == "text").strip()
                 if text:
                     return text
-                # 200 but no text (e.g. stop_reason 'refusal' / all-thinking):
-                # log it so a permanently-empty message is visible, then fall through.
-                print(f"  [CLAUDE empty-200] stop={data.get('stop_reason')} content_types="
+                # 200 but no text (e.g. stop_reason 'refusal' / all-thinking).
+                # Do NOT retry: an identical request returns the same empty result,
+                # so retrying only triples the cost. Return "" now — the caller's
+                # next-run retry + attempt cap handle any genuine transient.
+                print(f"  [CLAUDE empty-200 -> no retry] stop={data.get('stop_reason')} content_types="
                       f"{[p.get('type') for p in parts]}")
+                return ""
             if attempt < retries:
                 if r.status_code in (429, 529):
                     # Rate limited / overloaded: honour Retry-After, else long backoff.
