@@ -11,23 +11,23 @@
  },
  "ecom_serge": {
   "date": "2026-07-20",
-  "last_sent_iso": "2026-07-20T16:01:47.082834+02:00",
-  "sent_today": 10
+  "last_sent_iso": "2026-07-20T16:42:13.697657+02:00",
+  "sent_today": 11
  },
  "ecom_sergey": {
   "date": "2026-07-20",
-  "last_sent_iso": "2026-07-20T16:01:47.082834+02:00",
-  "sent_today": 10
+  "last_sent_iso": "2026-07-20T16:42:13.697657+02:00",
+  "sent_today": 11
  },
  "infl_serge": {
   "date": "2026-07-20",
-  "last_sent_iso": "2026-07-20T15:24:54.382740+02:00",
-  "sent_today": 4
+  "last_sent_iso": "2026-07-20T16:42:13.697657+02:00",
+  "sent_today": 5
  },
  "infl_sergey": {
   "date": "2026-07-20",
-  "last_sent_iso": "2026-07-20T15:24:54.382740+02:00",
-  "sent_today": 4
+  "last_sent_iso": "2026-07-20T16:42:13.697657+02:00",
+  "sent_today": 5
  },
  "parser:parsers-b2b.yml": {
   "date": "2026-07-20",
