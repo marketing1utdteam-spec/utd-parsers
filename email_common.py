@@ -827,6 +827,13 @@ def call_claude(system, user, model=DEFAULT_MODEL, max_tokens=1500,
     payload = {
         "model": model,
         "max_tokens": max_tokens,
+        # Sonnet-5 defaults to adaptive thinking, which on some messages spends the
+        # whole max_tokens budget on a thinking block and returns NO text
+        # (stop_reason=max_tokens, content=['thinking']) — the real cause of the
+        # "empty AI response" cases. Email drafting/classification here does not
+        # need extended thinking, so disable it: no empty replies, lower cost, and
+        # faster. (Older models ignore this field.)
+        "thinking": {"type": "disabled"},
         "system": system,
         "messages": [{"role": "user", "content": user}],
     }
