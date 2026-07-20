@@ -123,7 +123,7 @@ def clean_company_name(name):
     return n or "Unknown"
 
 
-def pick_next_uncontacted(rows):
+def pick_next_uncontacted(rows, state=None):
     """Status empty + valid email + Website present + not a theme competitor,
     then take the FIRST (top-most) such row for strict top-to-bottom coverage.
 
@@ -147,6 +147,12 @@ def pick_next_uncontacted(rows):
         e = str(r.get("Email", "")).strip()
         w = str(r.get("Website", "")).strip()
         if s == "" and is_valid(e) and w != "" and not is_theme_competitor(e):
+            # Skip "ghosts": rows whose Status is still empty in the sheet but that
+            # are already in the sent-state hash (a prior send's Status write did
+            # not stick). Otherwise candidates[0] is a ghost that is picked and
+            # skipped every run, jamming the whole queue behind it → 0 real sends.
+            if state is not None and ec.is_processed(state, e):
+                continue
             candidates.append((row_number, r))
     if not candidates:
         return None
@@ -644,7 +650,7 @@ def run_once():
     print(f"CRM: {len(records)} rows read in 1 call.")
 
     for _ in range(max(1, SEND_LIMIT)):
-        contact = pick_next_uncontacted(rows)
+        contact = pick_next_uncontacted(rows, state)
         if not contact:
             print("No uncontacted contacts left → stop.")
             break

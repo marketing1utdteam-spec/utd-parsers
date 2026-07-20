@@ -1284,6 +1284,14 @@ def run_once():
         dedup_id = f"ecom:{c['email'].lower()}:touch{c['touch']}"
         if ec.is_processed(state, dedup_id):
             continue
+        # One email per address per DAY. Stops the two mailboxes (sergey + serge),
+        # which run as sequential subprocesses sharing this state file, from
+        # hitting the same store with back-to-back touches in a single cycle
+        # (the touch-level dedup above allowed touch 3 then touch 4 same day).
+        day_id = f"ecomday:{datetime.now(timezone.utc):%Y-%m-%d}:{c['email'].lower()}"
+        if ec.is_processed(state, day_id):
+            print(f"  · {c['email']} already emailed today → skip (no same-day double-touch)")
+            continue
         selected += 1
 
         site_text = fetch_site_text(c["website"]) if c["touch"] == 1 else ""
@@ -1329,6 +1337,7 @@ def run_once():
         stats[payload["next_status"]] = stats.get(payload["next_status"], 0) + 1
         if not DRY_RUN:
             ec.mark_processed(state, dedup_id)
+            ec.mark_processed(state, day_id)
             sent += 1
 
     flush_sheet(sheet)
