@@ -510,6 +510,11 @@ def send_and_mark(ws, header, contact, drafted, state, stats):
 def run_once():
     print(f"=== UTD B2B follow-up | DRY_RUN={DRY_RUN} | limit={FOLLOWUP_LIMIT} | "
           f"after {FOLLOWUP_AFTER_DAYS}d | {datetime.now(timezone.utc).isoformat()} ===")
+    # Follow-ups master switch. Off by default per owner request: 0 follow-ups,
+    # only cold outreach goes out. Set FOLLOWUPS_ENABLED=1 to re-enable.
+    if os.environ.get("FOLLOWUPS_ENABLED", "0") != "1":
+        print("Follow-ups disabled (FOLLOWUPS_ENABLED != 1) → sending 0 follow-ups.")
+        return {"considered": 0, "sent": 0, "skipped": 0, "errors": [], "disabled": True}
     state = ec.load_state(STATE_FILE)
     stats = {"considered": 0, "sent": 0, "skipped": 0, "errors": []}
 

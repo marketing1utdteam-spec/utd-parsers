@@ -405,6 +405,11 @@ def _print_draft(to, subject, body, source, in_reply_to):
 def run_once():
     print(f"=== UTD influencer outreach FOLLOW-UP (Claude-first) | DRY_RUN={DRY_RUN} | "
           f"silence {FOLLOWUP_DAYS}d | {datetime.now(timezone.utc).isoformat()} ===")
+    # Follow-ups master switch. Off by default per owner request: 0 follow-ups,
+    # only cold outreach goes out. Set FOLLOWUPS_ENABLED=1 to re-enable.
+    if os.environ.get("FOLLOWUPS_ENABLED", "0") != "1":
+        print("Follow-ups disabled (FOLLOWUPS_ENABLED != 1) → sending 0 follow-ups.")
+        return {"considered": 0, "sent": 0, "disabled": True}
     state = ec.load_state(STATE_FILE)
 
     try:

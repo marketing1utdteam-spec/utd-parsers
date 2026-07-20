@@ -88,6 +88,11 @@ T2_DAYS = int(os.environ.get("ECOM_T2_DAYS", "7"))   # Sent → Followup1
 T3_DAYS = int(os.environ.get("ECOM_T3_DAYS", "8"))   # Followup1 → Followup2
 T4_DAYS = int(os.environ.get("ECOM_T4_DAYS", "10"))  # Followup2 → Sequence Done
 
+# Follow-ups master switch. Off by default per owner request: send 0 follow-ups,
+# every email is a fresh COLD touch (touch 1) to a new lead. Set FOLLOWUPS_ENABLED=1
+# to turn the touch 2-4 sequence back on.
+FOLLOWUPS_ENABLED = os.environ.get("FOLLOWUPS_ENABLED", "0") == "1"
+
 # HTTP fetch of the store homepage for touch-1 personalisation (n8n
 # «Fetch Store Website»: allowUnauthorizedCerts, maxRedirects 3, timeout 12s).
 FETCH_TIMEOUT = 12
@@ -486,6 +491,8 @@ def select_leads(rows):
             touch = 4
         if not touch:
             continue
+        if touch > 1 and not FOLLOWUPS_ENABLED:
+            continue  # follow-ups disabled → cold (touch 1) only
         url = website if website.startswith("http") else "https://" + website
         elig.append({
             "found": True, "touch": touch, "email": email,
