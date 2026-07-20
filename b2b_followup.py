@@ -69,7 +69,7 @@ DRY_RUN = os.environ.get("DRY_RUN", "true").strip().lower() in ("1", "true", "ye
 FOLLOWUP_LIMIT = int(os.environ.get("B2B_FOLLOWUP_LIMIT", "1"))
 
 # Silence window before a follow-up is due (n8n: 7 days).
-FOLLOWUP_AFTER_DAYS = int(os.environ.get("B2B_FOLLOWUP_AFTER_DAYS", "7"))
+FOLLOWUP_AFTER_DAYS = int(os.environ.get("B2B_FOLLOWUP_AFTER_DAYS", "10"))
 
 _STATE_DIR = os.environ.get("STATE_DIR", ".")
 STATE_FILE = os.path.join(_STATE_DIR, "b2b_followup_state.json")

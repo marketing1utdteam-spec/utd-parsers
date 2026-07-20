@@ -51,7 +51,7 @@ ACCOUNT = {"user": INFL_GMAIL_USER, "password": os.environ.get("SENDER_APP_PW") 
 DRY_RUN = os.environ.get("DRY_RUN", "true").strip().lower() in ("1", "true", "yes", "on")
 
 # Days of silence before a follow-up.
-FOLLOWUP_DAYS = int(os.environ.get("INFL_FOLLOWUP_DAYS", "7"))
+FOLLOWUP_DAYS = int(os.environ.get("INFL_FOLLOWUP_DAYS", "10"))
 
 _STATE_DIR = os.environ.get("STATE_DIR", ".")
 STATE_FILE = os.path.join(_STATE_DIR, "influencer_followup_state.json")

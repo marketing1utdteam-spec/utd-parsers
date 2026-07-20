@@ -81,6 +81,13 @@ DRY_RUN = os.environ.get("DRY_RUN", "true").strip().lower() in ("1", "true", "ye
 # LEAD_LIMIT keeps that default (1) but allows a small batch per GHA run.
 LEAD_LIMIT = int(os.environ.get("LEAD_LIMIT", "1"))
 
+# Follow-up cadence: days since the last send before the next touch is due.
+# Calmer than the original 4/4/6 so follow-ups go out less often (and stop
+# crowding out new cold leads). Override via env to tune without a code change.
+T2_DAYS = int(os.environ.get("ECOM_T2_DAYS", "7"))   # Sent → Followup1
+T3_DAYS = int(os.environ.get("ECOM_T3_DAYS", "8"))   # Followup1 → Followup2
+T4_DAYS = int(os.environ.get("ECOM_T4_DAYS", "10"))  # Followup2 → Sequence Done
+
 # HTTP fetch of the store homepage for touch-1 personalisation (n8n
 # «Fetch Store Website»: allowUnauthorizedCerts, maxRedirects 3, timeout 12s).
 FETCH_TIMEOUT = 12
@@ -471,11 +478,11 @@ def select_leads(rows):
         touch = 0
         if st == "":
             touch = 1
-        elif st == "Sent" and ds >= 4:
+        elif st == "Sent" and ds >= T2_DAYS:
             touch = 2
-        elif st == "Followup1" and ds >= 4:
+        elif st == "Followup1" and ds >= T3_DAYS:
             touch = 3
-        elif st == "Followup2" and ds >= 6:
+        elif st == "Followup2" and ds >= T4_DAYS:
             touch = 4
         if not touch:
             continue
