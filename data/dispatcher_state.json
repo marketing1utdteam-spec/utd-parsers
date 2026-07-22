@@ -1,39 +1,40 @@
 {
  "b2b_serge": {
   "date": "2026-07-22",
-  "last_sent_iso": "2026-07-22T11:41:58.572882+02:00",
-  "sent_today": 4
+  "last_sent_iso": "2026-07-22T12:21:09.406538+02:00",
+  "sent_today": 5
  },
  "b2b_sergey": {
   "date": "2026-07-22",
-  "last_sent_iso": "2026-07-22T11:41:58.572882+02:00",
-  "sent_today": 4
+  "last_sent_iso": "2026-07-22T12:21:09.406538+02:00",
+  "sent_today": 5
  },
  "ecom_serge": {
   "date": "2026-07-22",
-  "last_sent_iso": "2026-07-22T11:41:58.572882+02:00",
-  "sent_today": 4
+  "last_sent_iso": "2026-07-22T12:21:09.406538+02:00",
+  "sent_today": 5
  },
  "ecom_sergey": {
   "date": "2026-07-22",
-  "last_sent_iso": "2026-07-22T11:41:58.572882+02:00",
-  "sent_today": 4
+  "last_sent_iso": "2026-07-22T12:21:09.406538+02:00",
+  "sent_today": 5
  },
  "infl_serge": {
   "date": "2026-07-22",
-  "last_sent_iso": "2026-07-22T10:59:27.296515+02:00",
-  "sent_today": 2
+  "last_sent_iso": "2026-07-22T12:21:09.406538+02:00",
+  "sent_today": 3
  },
  "infl_sergey": {
   "date": "2026-07-22",
-  "last_sent_iso": "2026-07-22T10:59:27.296515+02:00",
-  "sent_today": 2
+  "last_sent_iso": "2026-07-22T12:21:09.406538+02:00",
+  "sent_today": 3
  },
  "parser:parsers-b2b.yml": {
   "date": "2026-07-22",
   "fired": [
    1,
-   6
+   6,
+   10
   ]
  },
  "parser:parsers-ecom.yml": {
