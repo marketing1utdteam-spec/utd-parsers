@@ -1,23 +1,23 @@
 {
  "b2b_serge": {
   "date": "2026-07-22",
-  "last_sent_iso": "2026-07-22T16:21:32.800470+02:00",
-  "sent_today": 11
+  "last_sent_iso": "2026-07-22T17:07:10.851496+02:00",
+  "sent_today": 12
  },
  "b2b_sergey": {
   "date": "2026-07-22",
-  "last_sent_iso": "2026-07-22T16:21:32.800470+02:00",
-  "sent_today": 11
+  "last_sent_iso": "2026-07-22T17:07:10.851496+02:00",
+  "sent_today": 12
  },
  "ecom_serge": {
   "date": "2026-07-22",
-  "last_sent_iso": "2026-07-22T16:21:32.800470+02:00",
-  "sent_today": 11
+  "last_sent_iso": "2026-07-22T17:07:10.851496+02:00",
+  "sent_today": 12
  },
  "ecom_sergey": {
   "date": "2026-07-22",
-  "last_sent_iso": "2026-07-22T16:21:32.800470+02:00",
-  "sent_today": 11
+  "last_sent_iso": "2026-07-22T17:07:10.851496+02:00",
+  "sent_today": 12
  },
  "infl_serge": {
   "date": "2026-07-22",
@@ -41,7 +41,8 @@
  "parser:parsers-ecom.yml": {
   "date": "2026-07-22",
   "fired": [
-   3
+   3,
+   15
   ]
  },
  "parser:parsers-influencers.yml": {
