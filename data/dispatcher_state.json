@@ -32,7 +32,8 @@
  "parser:parsers-b2b.yml": {
   "date": "2026-07-23",
   "fired": [
-   1
+   1,
+   6
   ]
  },
  "parser:parsers-ecom.yml": {
