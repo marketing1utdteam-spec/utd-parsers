@@ -1,33 +1,33 @@
 {
  "b2b_serge": {
   "date": "2026-07-23",
-  "last_sent_iso": "",
-  "sent_today": 0
+  "last_sent_iso": "2026-07-23T09:15:06.348290+02:00",
+  "sent_today": 1
  },
  "b2b_sergey": {
   "date": "2026-07-23",
-  "last_sent_iso": "",
-  "sent_today": 0
+  "last_sent_iso": "2026-07-23T09:15:06.348290+02:00",
+  "sent_today": 1
  },
  "ecom_serge": {
   "date": "2026-07-23",
-  "last_sent_iso": "",
-  "sent_today": 0
+  "last_sent_iso": "2026-07-23T09:15:06.348290+02:00",
+  "sent_today": 1
  },
  "ecom_sergey": {
   "date": "2026-07-23",
-  "last_sent_iso": "",
-  "sent_today": 0
+  "last_sent_iso": "2026-07-23T09:15:06.348290+02:00",
+  "sent_today": 1
  },
  "infl_serge": {
   "date": "2026-07-23",
-  "last_sent_iso": "",
-  "sent_today": 0
+  "last_sent_iso": "2026-07-23T09:15:06.348290+02:00",
+  "sent_today": 1
  },
  "infl_sergey": {
   "date": "2026-07-23",
-  "last_sent_iso": "",
-  "sent_today": 0
+  "last_sent_iso": "2026-07-23T09:15:06.348290+02:00",
+  "sent_today": 1
  },
  "parser:parsers-b2b.yml": {
   "date": "2026-07-23",
@@ -44,6 +44,8 @@
  },
  "parser:parsers-influencers.yml": {
   "date": "2026-07-23",
-  "fired": []
+  "fired": [
+   7
+  ]
  }
 }
