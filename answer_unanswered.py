@@ -83,6 +83,19 @@ def _resubject(s):
     return s if s.lower().startswith("re:") else "Re: " + (s or "your message")
 
 
+def _strip_signoff(b):
+    """Remove a sign-off the model appended (Best regards,\\nSergey\\nUTD Web...)
+    so our own SIG is not duplicated. Cuts at a sign-off line whose tail to the
+    end is short and mentions Sergey/UTD (i.e. a signature, not body text)."""
+    b = (b or "").strip()
+    for mm in re.finditer(r"(?im)^\s*(best regards|best|cheers|warm regards|kind regards|"
+                          r"regards|sincerely|thanks|thank you)\b[,.]?\s*$", b):
+        tail = b[mm.start():]
+        if len(tail) < 260 and ("sergey" in tail.lower() or "utd" in tail.lower()):
+            return b[:mm.start()].strip()
+    return b
+
+
 def main():
     if not ACCOUNTS:
         print("no mailbox creds"); return
@@ -116,6 +129,7 @@ def main():
             if not body or not body.strip():
                 print(f"  [skip {frm}] empty AI reply"); continue
             body = re.sub(r"\s+—\s+", ", ", body).replace("—", "-").strip()
+            body = _strip_signoff(body)   # remove any sign-off the model added; we add SIG once
             if not re.match(r"(?i)^\s*(hi|hello|hey|dear)\b", body):
                 body = "Hi there,\n\n" + body
             body += SIG
