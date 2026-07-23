@@ -11,13 +11,13 @@
  },
  "ecom_serge": {
   "date": "2026-07-23",
-  "last_sent_iso": "2026-07-23T16:40:16.750175+02:00",
-  "sent_today": 12
+  "last_sent_iso": "2026-07-23T17:18:08.307075+02:00",
+  "sent_today": 13
  },
  "ecom_sergey": {
   "date": "2026-07-23",
-  "last_sent_iso": "2026-07-23T16:40:16.750175+02:00",
-  "sent_today": 12
+  "last_sent_iso": "2026-07-23T17:18:08.307075+02:00",
+  "sent_today": 13
  },
  "infl_serge": {
   "date": "2026-07-23",
@@ -41,7 +41,8 @@
  "parser:parsers-ecom.yml": {
   "date": "2026-07-23",
   "fired": [
-   3
+   3,
+   15
   ]
  },
  "parser:parsers-influencers.yml": {
