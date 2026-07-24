@@ -31,7 +31,9 @@
  },
  "parser:parsers-b2b.yml": {
   "date": "2026-07-24",
-  "fired": []
+  "fired": [
+   1
+  ]
  },
  "parser:parsers-ecom.yml": {
   "date": "2026-07-24",
