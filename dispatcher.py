@@ -102,6 +102,16 @@ ALWAYS = [
      "business_only": True},
 ]
 
+# Influencer chain master switch. OFF per owner request (2026-07-22): no
+# influencer cold sends, no autoresponses, no reminders, no parser runs.
+# Set INFLUENCER_ENABLED=1 (repo variable/env) to bring the whole chain back.
+INFLUENCER_ENABLED = os.environ.get("INFLUENCER_ENABLED", "0") == "1"
+if not INFLUENCER_ENABLED:
+    SENDERS = [t for t in SENDERS if not t["task"].startswith("infl")]
+    ALWAYS = [t for t in ALWAYS if not t["task"].startswith("infl")]
+    PARSER_SLOTS.pop("parsers-influencers.yml", None)  # stop collecting influencer contacts too
+    print("[dispatcher] influencer chain DISABLED (INFLUENCER_ENABLED != 1)")
+
 
 def load_state():
     try:
